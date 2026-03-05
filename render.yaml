@@ -1,0 +1,34 @@
+# Render Configuration
+# https://render.com/docs/blueprint-spec
+
+services:
+  # API Service
+  - type: web
+    name: inventario-cie-api
+    env: python
+    region: oregon
+    plan: starter
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 60
+      - key: APP_NAME
+        value: Inventario CIE API
+      - key: DEBUG
+        value: false
+    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile
