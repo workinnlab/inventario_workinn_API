@@ -179,7 +179,7 @@ def get_prestatarios(supabase: Client, skip: int = 0, limit: int = 100, activo: 
     query = supabase.table("prestatarios").select("*")
     if activo is not None:
         query = query.eq("activo", activo)
-    response = await query.range(skip, skip + limit - 1).execute()
+    response = query.range(skip, skip + limit - 1).execute()
     return response.data
 
 
@@ -203,7 +203,7 @@ def update_prestatario(supabase: Client, prestatario_id: int, data: Dict[str, An
 
 def delete_prestatario(supabase: Client, prestatario_id: int) -> bool:
     """Eliminar prestatario (lógico: marca como inactivo)"""
-    return await update_prestatario(supabase, prestatario_id, {"activo": False})
+    return update_prestatario(supabase, prestatario_id, {"activo": False})
 
 
 # ============================================================================
@@ -215,7 +215,7 @@ def get_prestamos(supabase: Client, skip: int = 0, limit: int = 100, estado: str
     query = supabase.table("prestamos").select("*")
     if estado:
         query = query.eq("estado", estado)
-    response = await query.range(skip, skip + limit - 1).execute()
+    response = query.range(skip, skip + limit - 1).execute()
     return response.data
 
 
@@ -258,7 +258,7 @@ def get_movimientos(supabase: Client, skip: int = 0, limit: int = 100, tipo: str
     query = supabase.table("movimientos").select("*").order("created_at", desc=True)
     if tipo:
         query = query.eq("tipo", tipo)
-    response = await query.range(skip, skip + limit - 1).execute()
+    response = query.range(skip, skip + limit - 1).execute()
     return response.data
 
 
