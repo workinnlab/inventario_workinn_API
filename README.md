@@ -178,4 +178,4 @@ git push origin main
 
 ---
 
-**Hecho con ❤️ por Eddy**
+**Hecho por: Eddy**
