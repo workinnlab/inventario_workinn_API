@@ -207,7 +207,8 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
         if not prestamo:
             raise HTTPException(status_code=404, detail="Préstamo no encontrado")
 
-        if prestamo.estado != 'activo':
+        # Los datos de Supabase son dicts, no objetos Pydantic
+        if prestamo['estado'] != 'activo':
             raise HTTPException(status_code=400, detail="El préstamo no está activo")
 
         # Usar formato de fecha compatible con PostgreSQL
