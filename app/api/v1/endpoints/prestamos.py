@@ -203,19 +203,22 @@ def actualizar_prestamo(prestamo_id: int, prestamo: PrestamoUpdate, supabase: Cl
 def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
     """Marcar préstamo como devuelto"""
     try:
+        # Obtener préstamo
         prestamo = service.get_prestamo_by_id(supabase, prestamo_id)
         if not prestamo:
             raise HTTPException(status_code=404, detail="Préstamo no encontrado")
 
-        # Los datos de Supabase son dicts, no objetos Pydantic
-        if prestamo['estado'] != 'activo':
-            raise HTTPException(status_code=400, detail="El préstamo no está activo")
+        # Verificar estado (los datos de Supabase son dicts)
+        estado_actual = prestamo.get('estado', '')
+        if estado_actual != 'activo':
+            raise HTTPException(status_code=400, detail=f"El préstamo no está activo (estado: {estado_actual})")
 
         # Usar formato de fecha compatible con PostgreSQL
         from datetime import datetime, timezone
         fecha_devolucion = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
-        return service.update_prestamo(
+        # Actualizar préstamo
+        updated = service.update_prestamo(
             supabase,
             prestamo_id,
             {
@@ -223,10 +226,19 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
                 "fecha_devolucion": fecha_devolucion
             }
         )
+
+        if not updated:
+            raise HTTPException(status_code=404, detail="No se pudo actualizar el préstamo")
+
+        return updated
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al devolver: {str(e)}")
+        import traceback
+        error_detail = f"Error al devolver: {str(e)}\n{traceback.format_exc()}"
+        print(f"❌ ERROR EN DEVOLVER: {error_detail}")
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @router.delete("/prestamos/{prestamo_id}", tags=["Préstamos > Gestión"])
