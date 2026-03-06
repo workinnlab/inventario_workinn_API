@@ -117,10 +117,12 @@ uvicorn app.main:app --reload
 
 | Archivo | Descripción |
 |---------|-------------|
-| `docs/ENDPOINTS.md` | Lista completa de endpoints |
-| `docs/INICIO_RAPIDO.md` | Guía detallada de inicio |
-| `insumo/schema_supabase.sql` | Schema de la base de datos |
-| `insumo/auth_setup.sql` | Configuración de autenticación |
+| [`docs/API_FOR_FRONTEND.md`](docs/API_FOR_FRONTEND.md) | **API completa para frontend** |
+| [`docs/FRONTEND_RECOMMENDATION.md`](docs/FRONTEND_RECOMMENDATION.md) | **Recomendación de frontend** |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Guía de deployment |
+| [`docs/PROXIMOS_PASOS.md`](docs/PROXIMOS_PASOS.md) | Paso a paso rápido |
+| [`docs/ENDPOINTS.md`](docs/ENDPOINTS.md) | Lista de endpoints |
+| [`docs/INICIO_RAPIDO.md`](docs/INICIO_RAPIDO.md) | Inicio rápido |
 
 ---
 
