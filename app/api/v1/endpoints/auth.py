@@ -142,7 +142,7 @@ async def logout(
 
 
 @router.get("/me", response_model=PerfilResponse, tags=["Autenticación"])
-async def get_current_user(
+def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     supabase: Client = Depends(get_supabase)
 ):
@@ -152,25 +152,25 @@ async def get_current_user(
     try:
         # Verificar token y obtener usuario
         token = credentials.credentials
-        user_response = await supabase.auth.get_user(token)
-        
+        user_response = supabase.auth.get_user(token)
+
         if not user_response.user:
             raise HTTPException(
                 status_code=401,
                 detail="Token inválido o expirado"
             )
-        
+
         # Obtener perfil completo
         perfil = supabase.table("perfiles").select("*").eq("id", user_response.user.id).execute()
-        
+
         if not perfil.data:
             raise HTTPException(
                 status_code=404,
                 detail="Perfil no encontrado"
             )
-        
+
         return PerfilResponse(**perfil.data[0])
-        
+
     except HTTPException:
         raise
     except Exception as e:
