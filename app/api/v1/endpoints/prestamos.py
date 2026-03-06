@@ -202,21 +202,30 @@ def actualizar_prestamo(prestamo_id: int, prestamo: PrestamoUpdate, supabase: Cl
 @router.post("/prestamos/{prestamo_id}/devolver", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
 def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
     """Marcar préstamo como devuelto"""
-    prestamo = service.get_prestamo_by_id(supabase, prestamo_id)
-    if not prestamo:
-        raise HTTPException(status_code=404, detail="Préstamo no encontrado")
-    
-    if prestamo.estado != 'activo':
-        raise HTTPException(status_code=400, detail="El préstamo no está activo")
-    
-    return service.update_prestamo(
-        supabase,
-        prestamo_id,
-        {
-            "estado": "devuelto",
-            "fecha_devolucion": datetime.now().isoformat()
-        }
-    )
+    try:
+        prestamo = service.get_prestamo_by_id(supabase, prestamo_id)
+        if not prestamo:
+            raise HTTPException(status_code=404, detail="Préstamo no encontrado")
+
+        if prestamo.estado != 'activo':
+            raise HTTPException(status_code=400, detail="El préstamo no está activo")
+
+        # Usar formato de fecha compatible con PostgreSQL
+        from datetime import datetime, timezone
+        fecha_devolucion = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+        return service.update_prestamo(
+            supabase,
+            prestamo_id,
+            {
+                "estado": "devuelto",
+                "fecha_devolucion": fecha_devolucion
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al devolver: {str(e)}")
 
 
 @router.delete("/prestamos/{prestamo_id}", tags=["Préstamos > Gestión"])
