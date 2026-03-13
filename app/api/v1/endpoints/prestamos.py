@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime
 from supabase import Client
-from ....core.supabase_client import get_supabase
+from ....core.supabase_client import get_supabase, get_supabase_admin
 from ....schemas.inventory import (
     PrestatarioCreate, PrestatarioResponse, PrestatarioUpdate,
     PrestamoCreate, PrestamoResponse, PrestamoUpdate
@@ -108,7 +108,7 @@ def obtener_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase))
 
 
 @router.post("/prestamos", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
-def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supabase)):
+def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supabase), supabase_admin: Client = Depends(get_supabase_admin)):
     """
     Crear nuevo préstamo
     
@@ -140,7 +140,7 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
             detail="Debes especificar un item: equipo_id, electronica_id, robot_id o material_id"
         )
     
-    # Verificar que el item existe
+    # Verificar que el item existe y tiene disponibilidad
     if item_tipo == 'equipo':
         item = service.get_equipo_by_id(supabase, item_id)
         if not item:
@@ -149,30 +149,36 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
         item = service.get_electronica_by_id(supabase, item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Elemento de electrónica no encontrado")
+        if item.get('en_stock', 0) < 1:
+            raise HTTPException(status_code=400, detail="No hay unidades de electrónica disponibles en stock")
     elif item_tipo == 'robot':
         item = service.get_robot_by_id(supabase, item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Robot no encontrado")
+        if item.get('disponible', 0) < 1:
+            raise HTTPException(status_code=400, detail="No hay robots disponibles para prestar")
     elif item_tipo == 'material':
         item = service.get_material_by_id(supabase, item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Material no encontrado")
-    
+        if item.get('en_stock', 0) < 1:
+            raise HTTPException(status_code=400, detail="No hay unidades de material disponibles en stock")
+
     # Verificar que el prestatario existe
     prestatario = service.get_prestatario_by_id(supabase, prestamo.prestatario_id)
     if not prestatario:
         raise HTTPException(status_code=404, detail="Prestatario no encontrado")
-    
+
     # Preparar datos para insertar
     data = {
         "prestatario_id": prestamo.prestatario_id,
         "estado": "activo",
         "observaciones": prestamo.observaciones
     }
-    
+
     if prestamo.fecha_limite:
         data["fecha_limite"] = prestamo.fecha_limite.isoformat()
-    
+
     # Agregar la FK correspondiente
     if item_tipo == 'equipo':
         data["equipo_id"] = item_id
@@ -182,8 +188,27 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
         data["robot_id"] = item_id
     elif item_tipo == 'material':
         data["material_id"] = item_id
-    
-    return service.create_prestamo(supabase, data)
+
+    nuevo_prestamo = service.create_prestamo(supabase, data)
+
+    # Actualizar contadores del item (usando admin para bypass RLS)
+    if item_tipo == 'robot':
+        service.update_robot(supabase_admin, item_id, {
+            "disponible": item['disponible'] - 1,
+            "en_uso": item['en_uso'] + 1
+        })
+    elif item_tipo == 'electronica':
+        service.update_electronica(supabase_admin, item_id, {
+            "en_stock": item['en_stock'] - 1,
+            "en_uso": item['en_uso'] + 1
+        })
+    elif item_tipo == 'material':
+        service.update_material(supabase_admin, item_id, {
+            "en_stock": item['en_stock'] - 1,
+            "en_uso": item['en_uso'] + 1
+        })
+
+    return nuevo_prestamo
 
 
 @router.put("/prestamos/{prestamo_id}", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
@@ -200,7 +225,7 @@ def actualizar_prestamo(prestamo_id: int, prestamo: PrestamoUpdate, supabase: Cl
 
 
 @router.post("/prestamos/{prestamo_id}/devolver", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
-def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
+def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase), supabase_admin: Client = Depends(get_supabase_admin)):
     """Marcar préstamo como devuelto"""
     try:
         # Obtener préstamo
@@ -229,6 +254,29 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
 
         if not updated:
             raise HTTPException(status_code=404, detail="No se pudo actualizar el préstamo")
+
+        # Actualizar contadores del item al devolver (usando admin para bypass RLS)
+        if prestamo.get('robot_id'):
+            robot = service.get_robot_by_id(supabase, prestamo['robot_id'])
+            if robot:
+                service.update_robot(supabase_admin, prestamo['robot_id'], {
+                    "disponible": robot['disponible'] + 1,
+                    "en_uso": max(0, robot['en_uso'] - 1)
+                })
+        elif prestamo.get('electronica_id'):
+            electronica = service.get_electronica_by_id(supabase, prestamo['electronica_id'])
+            if electronica:
+                service.update_electronica(supabase_admin, prestamo['electronica_id'], {
+                    "en_stock": electronica['en_stock'] + 1,
+                    "en_uso": max(0, electronica['en_uso'] - 1)
+                })
+        elif prestamo.get('material_id'):
+            material = service.get_material_by_id(supabase, prestamo['material_id'])
+            if material:
+                service.update_material(supabase_admin, prestamo['material_id'], {
+                    "en_stock": material['en_stock'] + 1,
+                    "en_uso": max(0, material['en_uso'] - 1)
+                })
 
         return updated
 
