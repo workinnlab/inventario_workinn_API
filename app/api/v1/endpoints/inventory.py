@@ -78,17 +78,18 @@ def actualizar_equipo(equipo_id: int, equipo: EquipoUpdate, supabase: Client = D
 
     VALIDACIONES:
     - NO cambiar a 'disponible' si tiene préstamos activos
+    - NO cambiar a 'baja' o 'dado de baja' si tiene préstamos activos
     """
     update_data = equipo.model_dump(exclude_unset=True)
 
-    # VALIDACIÓN: No cambiar a 'disponible' si tiene préstamos activos
-    if 'estado' in update_data and update_data['estado'] == 'disponible':
+    # VALIDACIÓN: No cambiar a 'disponible' o 'baja' si tiene préstamos activos
+    if 'estado' in update_data and update_data['estado'] in ['disponible', 'baja', 'dado de baja']:
         prestamos_activos = supabase.table("prestamos").select("*").eq("equipo_id", equipo_id).eq("estado", "activo").execute()
 
         if prestamos_activos.data:
             raise HTTPException(
                 status_code=400,
-                detail=f"No se puede cambiar a 'disponible': el equipo tiene {len(prestamos_activos.data)} préstamo(s) activo(s)"
+                detail=f"No se puede cambiar a '{update_data['estado']}': el equipo tiene {len(prestamos_activos.data)} préstamo(s) activo(s). Primero deben ser devueltos."
             )
 
     updated = service.update_equipo(
@@ -243,6 +244,30 @@ def eliminar_robot(robot_id: int, supabase: Client = Depends(get_supabase)):
 # ============================================================================
 # MATERIALES
 # ============================================================================
+
+@router.get("/materiales/stock-minimo", response_model=List[MaterialResponse], tags=["Inventario > Materiales"])
+def get_materiales_stock_minimo(
+    minimo: int = Query(5, ge=1, description="Cantidad mínima de stock para alertar"),
+    supabase: Client = Depends(get_supabase)
+):
+    """
+    Obtener materiales con stock mínimo o por debajo del mínimo
+
+    Útil para alertas de reorden/abastecimiento
+    """
+    materiales = service.get_materiales(supabase, skip=0, limit=1000)
+
+    # Filtrar materiales con stock <= minimo
+    materiales_stock_bajo = [
+        m for m in materiales
+        if m.get('en_stock', 0) <= minimo
+    ]
+
+    # Ordenar por stock (menor a mayor)
+    materiales_stock_bajo.sort(key=lambda x: x.get('en_stock', 0))
+
+    return materiales_stock_bajo
+
 
 @router.get("/materiales", response_model=List[MaterialResponse], tags=["Inventario > Materiales"])
 def listar_materiales(

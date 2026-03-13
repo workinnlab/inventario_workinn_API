@@ -113,5 +113,20 @@ def crear_movimiento(movimiento: MovimientoCreate, supabase: Client = Depends(ge
         data["robot_id"] = item_id
     elif item_tipo == 'material':
         data["material_id"] = item_id
-    
+
     return service.create_movimiento(supabase, data)
+
+
+@router.delete("/movimientos/{movimiento_id}", tags=["Auditoría > Movimientos"])
+def eliminar_movimiento(movimiento_id: int):
+    """
+    Eliminar movimiento
+
+    VALIDACIÓN:
+    - NO permitir eliminar movimientos (auditoría debe ser inmutable)
+    - Esta operación está BLOQUEADA por diseño
+    """
+    raise HTTPException(
+        status_code=403,
+        detail="❌ OPERACIÓN NO PERMITIDA: Los movimientos de auditoría son INMUTABLES y no pueden ser eliminados. Esto es por diseño para mantener la integridad del historial."
+    )

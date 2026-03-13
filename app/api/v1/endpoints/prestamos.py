@@ -42,7 +42,22 @@ def obtener_prestatario(prestatario_id: int, supabase: Client = Depends(get_supa
 
 @router.post("/prestatarios", response_model=PrestatarioResponse, tags=["Préstamos > Prestatarios"])
 def crear_prestatario(prestatario: PrestatarioCreate, supabase: Client = Depends(get_supabase)):
-    """Crear nuevo prestatario"""
+    """
+    Crear nuevo prestatario
+
+    VALIDACIONES:
+    - Email válido (si se proporciona)
+    """
+    # VALIDACIÓN: Email válido (formato simple)
+    if prestatario.email:
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, prestatario.email):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Email inválido: '{prestatario.email}'. Formato esperado: usuario@dominio.com"
+            )
+
     return service.create_prestatario(
         supabase,
         {
@@ -57,12 +72,25 @@ def crear_prestatario(prestatario: PrestatarioCreate, supabase: Client = Depends
 
 @router.put("/prestatarios/{prestatario_id}", response_model=PrestatarioResponse, tags=["Préstamos > Prestatarios"])
 def actualizar_prestatario(prestatario_id: int, prestatario: PrestatarioUpdate, supabase: Client = Depends(get_supabase)):
-    """Actualizar prestatario"""
-    updated = service.update_prestatario(
-        supabase,
-        prestatario_id,
-        prestatario.model_dump(exclude_unset=True)
-    )
+    """
+    Actualizar prestatario
+
+    VALIDACIONES:
+    - Email válido (si se proporciona y se está actualizando)
+    """
+    update_data = prestatario.model_dump(exclude_unset=True)
+
+    # VALIDACIÓN: Email válido (si se está actualizando)
+    if 'email' in update_data and update_data['email']:
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, update_data['email']):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Email inválido: '{update_data['email']}'. Formato esperado: usuario@dominio.com"
+            )
+
+    updated = service.update_prestatario(supabase, prestatario_id, update_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Prestatario no encontrado")
     return updated
@@ -108,7 +136,31 @@ def listar_prestamos(
 
 @router.get("/prestamos/activos", response_model=List[PrestamoResponse], tags=["Préstamos > Gestión"])
 def listar_prestamos_activos(supabase: Client = Depends(get_supabase)):
-    """Obtener préstamos activos"""
+    """
+    Obtener préstamos activos
+
+    NOTA: También incluye lógica para marcar automáticamente como 'vencidos'
+    los préstamos que pasaron su fecha_limite
+    """
+    # Primero, marcar como vencidos los que ya pasaron fecha_limite
+    from datetime import datetime, timezone
+    fecha_actual = datetime.now(timezone.utc)
+
+    prestamos_activos = supabase.table("prestamos").select("*").eq("estado", "activo").execute()
+
+    for prestamo in prestamos_activos.data:
+        fecha_limite_str = prestamo.get('fecha_limite')
+        if fecha_limite_str:
+            # Parsear fecha_limite
+            try:
+                fecha_limite = datetime.fromisoformat(fecha_limite_str.replace('Z', '+00:00'))
+                if fecha_limite < fecha_actual:
+                    # Marcar como vencido
+                    supabase.table("prestamos").update({"estado": "vencido"}).eq("id", prestamo['id']).execute()
+            except Exception:
+                pass  # Si no se puede parsear, continuar
+
+    # Retornar préstamos activos
     return service.get_prestamos_activos(supabase)
 
 
