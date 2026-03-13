@@ -47,6 +47,8 @@ def crear_prestatario(prestatario: PrestatarioCreate, supabase: Client = Depends
 
     VALIDACIONES:
     - Email válido (si se proporciona)
+    - PR-06: Cédula única (si se proporciona)
+    - PR-04: Teléfono formato válido (si se proporciona)
     """
     # VALIDACIÓN: Email válido (formato simple)
     if prestatario.email:
@@ -56,6 +58,26 @@ def crear_prestatario(prestatario: PrestatarioCreate, supabase: Client = Depends
             raise HTTPException(
                 status_code=400,
                 detail=f"Email inválido: '{prestatario.email}'. Formato esperado: usuario@dominio.com"
+            )
+
+    # VALIDACIÓN PR-06: Cédula única (si se proporciona)
+    if prestatario.cedula:
+        prestatarios_con_cedula = supabase.table("prestatarios").select("*").eq("cedula", prestatario.cedula).execute()
+        if prestatarios_con_cedula.data:
+            raise HTTPException(
+                status_code=400,
+                detail=f"La cédula '{prestatario.cedula}' YA ESTÁ EN USO por otro prestatario"
+            )
+
+    # VALIDACIÓN PR-04: Teléfono formato válido (si se proporciona)
+    if prestatario.telefono:
+        import re
+        # Formato: +57 300 123 4567 o 300 123 4567 o 3001234567
+        phone_pattern = r'^(\+57\s?)?([0-9]{10}|[0-9]{3}\s?[0-9]{3}\s?[0-9]{4})$'
+        if not re.match(phone_pattern, prestatario.telefono.replace(' ', '')):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Teléfono inválido: '{prestatario.telefono}'. Formato esperado: 3001234567 o +57 300 123 4567"
             )
 
     return service.create_prestatario(
@@ -320,6 +342,29 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
         )
 
     # ========================================================================
+    # VALIDACIÓN 4: RN-05 - No prestar si tiene préstamos vencidos
+    # ========================================================================
+    prestamos_vencidos = supabase.table("prestamos").select("*").eq("prestatario_id", prestamo.prestatario_id).eq("estado", "vencido").execute()
+
+    if prestamos_vencidos.data:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede crear préstamo: el prestatario tiene {len(prestamos_vencidos.data)} préstamo(s) VENCIDO(S). Primero deben ser devueltos."
+        )
+
+    # ========================================================================
+    # VALIDACIÓN 5: RN-01 - Límite de préstamos activos por prestatario
+    # ========================================================================
+    LIMITE_PRESTAMOS_ACTIVOS = 5  # Máximo 5 préstamos activos simultáneos
+    prestamos_activos_prestatario = supabase.table("prestamos").select("*").eq("prestatario_id", prestamo.prestatario_id).eq("estado", "activo").execute()
+
+    if len(prestamos_activos_prestatario.data) >= LIMITE_PRESTAMOS_ACTIVOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede crear préstamo: el prestatario ya tiene {LIMITE_PRESTAMOS_ACTIVOS} préstamos activos (límite alcanzado)."
+        )
+
+    # ========================================================================
     # Crear préstamo (todas las validaciones pasaron)
     # ========================================================================
     data = {
@@ -334,12 +379,33 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
     # Agregar la FK correspondiente
     if item_tipo == 'equipo':
         data["equipo_id"] = item_id
+        # VALIDACIÓN PS-13: Actualizar estado del equipo a 'prestado'
+        supabase.table("equipos").update({"estado": "prestado"}).eq("id", item_id).execute()
     elif item_tipo == 'electronica':
         data["electronica_id"] = item_id
+        # VALIDACIÓN EL-07: Restar del stock al prestar
+        electronica = service.get_electronica_by_id(supabase, item_id)
+        if electronica:
+            nuevo_stock = max(0, electronica.get('en_stock', 0) - 1)
+            supabase.table("electronica").update({"en_stock": nuevo_stock}).eq("id", item_id).execute()
     elif item_tipo == 'robot':
         data["robot_id"] = item_id
+        # VALIDACIÓN RO-08: Mover de disponible a en_uso al prestar
+        robot = service.get_robot_by_id(supabase, item_id)
+        if robot:
+            nuevo_disponible = max(0, robot.get('disponible', 0) - 1)
+            nuevo_en_uso = robot.get('en_uso', 0) + 1
+            supabase.table("robots").update({
+                "disponible": nuevo_disponible,
+                "en_uso": nuevo_en_uso
+            }).eq("id", item_id).execute()
     elif item_tipo == 'material':
         data["material_id"] = item_id
+        # Restar del stock al prestar
+        material = service.get_material_by_id(supabase, item_id)
+        if material:
+            nuevo_stock = max(0, material.get('en_stock', 0) - 1)
+            supabase.table("materiales").update({"en_stock": nuevo_stock}).eq("id", item_id).execute()
 
     return service.create_prestamo(supabase, data)
 
@@ -359,7 +425,15 @@ def actualizar_prestamo(prestamo_id: int, prestamo: PrestamoUpdate, supabase: Cl
 
 @router.post("/prestamos/{prestamo_id}/devolver", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
 def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
-    """Marcar préstamo como devuelto"""
+    """
+    Marcar préstamo como devuelto
+
+    VALIDACIONES:
+    - Solo devolver si está 'activo'
+    - PS-14: Actualizar estado del equipo a 'disponible' al devolver
+    - EL-08: Ajustar stock/en_uso de electrónica al devolver
+    - RO-09: Ajustar disponible/en_uso de robots al devolver
+    """
     try:
         # Obtener préstamo
         print(f"🔍 Buscando préstamo ID={prestamo_id}")
@@ -381,6 +455,51 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
         from datetime import datetime, timezone
         fecha_devolucion = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         print(f"📅 Fecha devolución: {fecha_devolucion}")
+
+        # ====================================================================
+        # PS-14: Actualizar estado del equipo a 'disponible' al devolver
+        # ====================================================================
+        equipo_id = prestamo.get('equipo_id')
+        if equipo_id:
+            print(f"🔄 Actualizando equipo {equipo_id} a 'disponible'...")
+            supabase.table("equipos").update({"estado": "disponible"}).eq("id", equipo_id).execute()
+
+        # ====================================================================
+        # EL-08: Ajustar stock de electrónica al devolver
+        # ====================================================================
+        electronica_id = prestamo.get('electronica_id')
+        if electronica_id:
+            electronica = service.get_electronica_by_id(supabase, electronica_id)
+            if electronica:
+                nuevo_stock = electronica.get('en_stock', 0) + 1
+                print(f"🔄 Ajustando stock electrónica: {electronica.get('en_stock')} -> {nuevo_stock}")
+                supabase.table("electronica").update({"en_stock": nuevo_stock}).eq("id", electronica_id).execute()
+
+        # ====================================================================
+        # RO-09: Ajustar disponible/en_uso de robots al devolver
+        # ====================================================================
+        robot_id = prestamo.get('robot_id')
+        if robot_id:
+            robot = service.get_robot_by_id(supabase, robot_id)
+            if robot:
+                nuevo_disponible = robot.get('disponible', 0) + 1
+                nuevo_en_uso = max(0, robot.get('en_uso', 0) - 1)
+                print(f"🔄 Ajustando robot: disponible {robot.get('disponible')} -> {nuevo_disponible}, en_uso {robot.get('en_uso')} -> {nuevo_en_uso}")
+                supabase.table("robots").update({
+                    "disponible": nuevo_disponible,
+                    "en_uso": nuevo_en_uso
+                }).eq("id", robot_id).execute()
+
+        # ====================================================================
+        # Ajustar stock de materiales al devolver
+        # ====================================================================
+        material_id = prestamo.get('material_id')
+        if material_id:
+            material = service.get_material_by_id(supabase, material_id)
+            if material:
+                nuevo_stock = material.get('en_stock', 0) + 1
+                print(f"🔄 Ajustando stock material: {material.get('en_stock')} -> {nuevo_stock}")
+                supabase.table("materiales").update({"en_stock": nuevo_stock}).eq("id", material_id).execute()
 
         # Actualizar préstamo
         print(f"🔄 Actualizando préstamo ID={prestamo_id}...")

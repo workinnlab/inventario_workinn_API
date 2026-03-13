@@ -52,12 +52,27 @@ def obtener_equipo_por_codigo(codigo: str, supabase: Client = Depends(get_supaba
 
 @router.post("/equipos", response_model=EquipoResponse, tags=["Inventario > Equipos"])
 def crear_equipo(equipo: EquipoCreate, supabase: Client = Depends(get_supabase)):
-    """Crear un nuevo equipo"""
+    """
+    Crear un nuevo equipo
+
+    VALIDACIONES:
+    - Código único
+    - EQ-07: Serial único (si se proporciona)
+    """
     # Verificar que el código no exista
-    existing = service.get_equipo_by_codigo(supabase, equipo.codigo)
-    if existing:
+    existing_codigo = service.get_equipo_by_codigo(supabase, equipo.codigo)
+    if existing_codigo:
         raise HTTPException(status_code=400, detail="El código ya existe")
-    
+
+    # VALIDACIÓN EQ-07: Verificar serial único (si se proporciona)
+    if equipo.serial:
+        equipos_con_serial = supabase.table("equipos").select("*").eq("serial", equipo.serial).execute()
+        if equipos_con_serial.data:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El serial '{equipo.serial}' YA ESTÁ EN USO por otro equipo"
+            )
+
     return service.create_equipo(
         supabase,
         {
