@@ -268,6 +268,45 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
             )
 
     # ========================================================================
+    # VALIDACIÓN 2B: Verificar stock disponible (para electrónica, robots, materiales)
+    # ========================================================================
+    if item_tipo == 'electronica':
+        electronica = service.get_electronica_by_id(supabase, item_id)
+        if not electronica:
+            raise HTTPException(status_code=404, detail="Electrónica no encontrada")
+
+        en_stock = electronica.get('en_stock', 0)
+        if en_stock <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"La electrónica con ID {item_id} NO TIENE STOCK disponible (en_stock={en_stock})"
+            )
+
+    elif item_tipo == 'robot':
+        robot = service.get_robot_by_id(supabase, item_id)
+        if not robot:
+            raise HTTPException(status_code=404, detail="Robot no encontrado")
+
+        disponible = robot.get('disponible', 0)
+        if disponible <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El robot con ID {item_id} NO TIENE unidades disponibles (disponible={disponible})"
+            )
+
+    elif item_tipo == 'material':
+        material = service.get_material_by_id(supabase, item_id)
+        if not material:
+            raise HTTPException(status_code=404, detail="Material no encontrado")
+
+        en_stock = material.get('en_stock', 0)
+        if en_stock <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El material con ID {item_id} NO TIENE stock disponible (en_stock={en_stock})"
+            )
+
+    # ========================================================================
     # VALIDACIÓN 3: Verificar que el prestatario exista y esté activo
     # ========================================================================
     prestatario = service.get_prestatario_by_id(supabase, prestamo.prestatario_id)

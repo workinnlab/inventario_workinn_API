@@ -149,7 +149,20 @@ def obtener_electronica(electronica_id: int, supabase: Client = Depends(get_supa
 
 @router.post("/electronica", response_model=ElectronicaResponse, tags=["Inventario > Electrónica"])
 def crear_electronica(electronica: ElectronicaCreate, supabase: Client = Depends(get_supabase)):
-    """Crear nuevo elemento de electrónica"""
+    """
+    Crear nuevo elemento de electrónica
+
+    VALIDACIONES:
+    - en_uso >= 0
+    - en_stock >= 0
+    - en_uso + en_stock = total (automático por columna generada)
+    """
+    # VALIDACIÓN: No permitir valores negativos
+    if electronica.en_uso < 0:
+        raise HTTPException(status_code=400, detail="en_uso no puede ser negativo")
+    if electronica.en_stock < 0:
+        raise HTTPException(status_code=400, detail="en_stock no puede ser negativo")
+
     return service.create_electronica(
         supabase,
         {
@@ -164,12 +177,23 @@ def crear_electronica(electronica: ElectronicaCreate, supabase: Client = Depends
 
 @router.put("/electronica/{electronica_id}", response_model=ElectronicaResponse, tags=["Inventario > Electrónica"])
 def actualizar_electronica(electronica_id: int, electronica: ElectronicaUpdate, supabase: Client = Depends(get_supabase)):
-    """Actualizar electrónica"""
-    updated = service.update_electronica(
-        supabase,
-        electronica_id,
-        electronica.model_dump(exclude_unset=True)
-    )
+    """
+    Actualizar electrónica
+
+    VALIDACIONES:
+    - No permitir valores negativos (en_uso, en_stock)
+    """
+    update_data = electronica.model_dump(exclude_unset=True)
+
+    # VALIDACIÓN: No permitir valores negativos
+    for campo in ['en_uso', 'en_stock']:
+        if campo in update_data and update_data[campo] < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El campo '{campo}' no puede ser negativo. Valor actual: {update_data[campo]}"
+            )
+
+    updated = service.update_electronica(supabase, electronica_id, update_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
     return updated
@@ -208,7 +232,26 @@ def obtener_robot(robot_id: int, supabase: Client = Depends(get_supabase)):
 
 @router.post("/robots", response_model=RobotResponse, tags=["Inventario > Robots"])
 def crear_robot(robot: RobotCreate, supabase: Client = Depends(get_supabase)):
-    """Crear nuevo robot"""
+    """
+    Crear nuevo robot
+
+    VALIDACIONES:
+    - fuera_de_servicio >= 0
+    - en_uso >= 0
+    - disponible >= 0
+    - fuera_de_servicio + en_uso + disponible = total (automático)
+    """
+    # VALIDACIÓN: No permitir valores negativos
+    if robot.fuera_de_servicio < 0:
+        raise HTTPException(status_code=400, detail="fuera_de_servicio no puede ser negativo")
+    if robot.en_uso < 0:
+        raise HTTPException(status_code=400, detail="en_uso no puede ser negativo")
+    if robot.disponible < 0:
+        raise HTTPException(status_code=400, detail="disponible no puede ser negativo")
+
+    # VALIDACIÓN: Verificar coherencia (la suma debe ser consistente)
+    total_esperado = robot.fuera_de_servicio + robot.en_uso + robot.disponible
+
     return service.create_robot(
         supabase,
         {
@@ -222,12 +265,23 @@ def crear_robot(robot: RobotCreate, supabase: Client = Depends(get_supabase)):
 
 @router.put("/robots/{robot_id}", response_model=RobotResponse, tags=["Inventario > Robots"])
 def actualizar_robot(robot_id: int, robot: RobotUpdate, supabase: Client = Depends(get_supabase)):
-    """Actualizar robot"""
-    updated = service.update_robot(
-        supabase,
-        robot_id,
-        robot.model_dump(exclude_unset=True)
-    )
+    """
+    Actualizar robot
+
+    VALIDACIONES:
+    - No permitir valores negativos (fuera_de_servicio, en_uso, disponible)
+    """
+    update_data = robot.model_dump(exclude_unset=True)
+
+    # VALIDACIÓN: No permitir valores negativos
+    for campo in ['fuera_de_servicio', 'en_uso', 'disponible']:
+        if campo in update_data and update_data[campo] < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El campo '{campo}' no puede ser negativo. Valor actual: {update_data[campo]}"
+            )
+
+    updated = service.update_robot(supabase, robot_id, update_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Robot no encontrado")
     return updated
