@@ -111,17 +111,16 @@ def obtener_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase))
 def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supabase)):
     """
     Crear nuevo préstamo
-    
-    Debes especificar UNO de estos campos:
-    - equipo_id
-    - electronica_id
-    - robot_id
-    - material_id
+
+    VALIDACIONES:
+    1. Verifica que el elemento NO esté ya prestado
+    2. Verifica que el elemento NO esté dañado o en mantenimiento
+    3. Verifica que el prestatario exista y esté activo
     """
     # Determinar qué tipo de item se está prestando
     item_id = None
     item_tipo = None
-    
+
     if prestamo.equipo_id:
         item_id = prestamo.equipo_id
         item_tipo = 'equipo'
@@ -139,40 +138,81 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
             status_code=400,
             detail="Debes especificar un item: equipo_id, electronica_id, robot_id o material_id"
         )
-    
-    # Verificar que el item existe
+
+    # ========================================================================
+    # VALIDACIÓN 1: Verificar que el elemento NO esté ya prestado
+    # ========================================================================
+    prestamos_activos = supabase.table("prestamos").select("*").eq("estado", "activo").execute()
+
+    for p in prestamos_activos.data:
+        if item_tipo == 'equipo' and p.get('equipo_id') == item_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El equipo con ID {item_id} YA ESTÁ PRESTADO. No se puede crear otro préstamo activo."
+            )
+        elif item_tipo == 'electronica' and p.get('electronica_id') == item_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El elemento de electrónica con ID {item_id} YA ESTÁ PRESTADO."
+            )
+        elif item_tipo == 'robot' and p.get('robot_id') == item_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El robot con ID {item_id} YA ESTÁ PRESTADO."
+            )
+        elif item_tipo == 'material' and p.get('material_id') == item_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El material con ID {item_id} YA ESTÁ PRESTADO."
+            )
+
+    # ========================================================================
+    # VALIDACIÓN 2: Verificar estado del elemento (si es equipo)
+    # ========================================================================
     if item_tipo == 'equipo':
-        item = service.get_equipo_by_id(supabase, item_id)
-        if not item:
+        equipo = service.get_equipo_by_id(supabase, item_id)
+        if not equipo:
             raise HTTPException(status_code=404, detail="Equipo no encontrado")
-    elif item_tipo == 'electronica':
-        item = service.get_electronica_by_id(supabase, item_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="Elemento de electrónica no encontrado")
-    elif item_tipo == 'robot':
-        item = service.get_robot_by_id(supabase, item_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="Robot no encontrado")
-    elif item_tipo == 'material':
-        item = service.get_material_by_id(supabase, item_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="Material no encontrado")
-    
-    # Verificar que el prestatario existe
+
+        estado_equipo = equipo.get('estado', '')
+
+        if estado_equipo == 'dañado':
+            raise HTTPException(
+                status_code=400,
+                detail=f"El equipo con ID {item_id} está DAÑADO. No se puede prestar."
+            )
+
+        if estado_equipo == 'mantenimiento':
+            raise HTTPException(
+                status_code=400,
+                detail=f"El equipo con ID {item_id} está en MANTENIMIENTO. No se puede prestar."
+            )
+
+    # ========================================================================
+    # VALIDACIÓN 3: Verificar que el prestatario exista y esté activo
+    # ========================================================================
     prestatario = service.get_prestatario_by_id(supabase, prestamo.prestatario_id)
     if not prestatario:
         raise HTTPException(status_code=404, detail="Prestatario no encontrado")
-    
-    # Preparar datos para insertar
+
+    if not prestatario.get('activo', False):
+        raise HTTPException(
+            status_code=400,
+            detail=f"El prestatario con ID {prestamo.prestatario_id} está INACTIVO."
+        )
+
+    # ========================================================================
+    # Crear préstamo (todas las validaciones pasaron)
+    # ========================================================================
     data = {
         "prestatario_id": prestamo.prestatario_id,
         "estado": "activo",
         "observaciones": prestamo.observaciones
     }
-    
+
     if prestamo.fecha_limite:
         data["fecha_limite"] = prestamo.fecha_limite.isoformat()
-    
+
     # Agregar la FK correspondiente
     if item_tipo == 'equipo':
         data["equipo_id"] = item_id
@@ -182,7 +222,7 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
         data["robot_id"] = item_id
     elif item_tipo == 'material':
         data["material_id"] = item_id
-    
+
     return service.create_prestamo(supabase, data)
 
 
@@ -204,20 +244,28 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
     """Marcar préstamo como devuelto"""
     try:
         # Obtener préstamo
+        print(f"🔍 Buscando préstamo ID={prestamo_id}")
         prestamo = service.get_prestamo_by_id(supabase, prestamo_id)
+        print(f"📦 Préstamo encontrado: {prestamo}")
+
         if not prestamo:
+            print(f"❌ Préstamo ID={prestamo_id} no encontrado")
             raise HTTPException(status_code=404, detail="Préstamo no encontrado")
 
         # Verificar estado (los datos de Supabase son dicts)
         estado_actual = prestamo.get('estado', '')
+        print(f"📊 Estado actual: {estado_actual}")
+
         if estado_actual != 'activo':
             raise HTTPException(status_code=400, detail=f"El préstamo no está activo (estado: {estado_actual})")
 
         # Usar formato de fecha compatible con PostgreSQL
         from datetime import datetime, timezone
         fecha_devolucion = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        print(f"📅 Fecha devolución: {fecha_devolucion}")
 
         # Actualizar préstamo
+        print(f"🔄 Actualizando préstamo ID={prestamo_id}...")
         updated = service.update_prestamo(
             supabase,
             prestamo_id,
@@ -226,6 +274,7 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
                 "fecha_devolucion": fecha_devolucion
             }
         )
+        print(f"✅ Resultado actualización: {updated}")
 
         if not updated:
             raise HTTPException(status_code=404, detail="No se pudo actualizar el préstamo")
