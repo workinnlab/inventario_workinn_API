@@ -70,7 +70,21 @@ def actualizar_prestatario(prestatario_id: int, prestatario: PrestatarioUpdate, 
 
 @router.delete("/prestatarios/{prestatario_id}", tags=["Préstamos > Prestatarios"])
 def eliminar_prestatario(prestatario_id: int, supabase: Client = Depends(get_supabase)):
-    """Eliminar prestatario (lógico: marca como inactivo)"""
+    """
+    Eliminar prestatario (lógico: marca como inactivo)
+
+    VALIDACIONES:
+    - NO eliminar/inactivar si tiene préstamos activos
+    """
+    # VALIDACIÓN: Verificar si tiene préstamos activos
+    prestamos_activos = supabase.table("prestamos").select("*").eq("prestatario_id", prestatario_id).eq("estado", "activo").execute()
+
+    if prestamos_activos.data:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede inactivar: el prestatario tiene {len(prestamos_activos.data)} préstamo(s) activo(s). Primero deben ser devueltos."
+        )
+
     updated = service.update_prestatario(supabase, prestatario_id, {"activo": False})
     if not updated:
         raise HTTPException(status_code=404, detail="Prestatario no encontrado")
@@ -116,6 +130,7 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
     1. Verifica que el elemento NO esté ya prestado
     2. Verifica que el elemento NO esté dañado o en mantenimiento
     3. Verifica que el prestatario exista y esté activo
+    4. Verifica que fecha_limite >= fecha_actual (si se proporciona)
     """
     # Determinar qué tipo de item se está prestando
     item_id = None
@@ -138,6 +153,18 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
             status_code=400,
             detail="Debes especificar un item: equipo_id, electronica_id, robot_id o material_id"
         )
+
+    # ========================================================================
+    # VALIDACIÓN 0: fecha_limite >= fecha_actual
+    # ========================================================================
+    from datetime import datetime, timezone
+    if prestamo.fecha_limite:
+        fecha_actual = datetime.now(timezone.utc)
+        if prestamo.fecha_limite < fecha_actual:
+            raise HTTPException(
+                status_code=400,
+                detail="fecha_limite debe ser mayor o igual a la fecha actual"
+            )
 
     # ========================================================================
     # VALIDACIÓN 1: Verificar que el elemento NO esté ya prestado
@@ -292,7 +319,26 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
 
 @router.delete("/prestamos/{prestamo_id}", tags=["Préstamos > Gestión"])
 def eliminar_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
-    """Eliminar préstamo"""
+    """
+    Eliminar préstamo
+
+    VALIDACIÓN:
+    - NO permitir eliminar si está activo (debe estar devuelto primero)
+    """
+    # Obtener préstamo para verificar estado
+    prestamo = service.get_prestamo_by_id(supabase, prestamo_id)
+
+    if not prestamo:
+        raise HTTPException(status_code=404, detail="Préstamo no encontrado")
+
+    # VALIDACIÓN: No eliminar si está activo
+    if prestamo.get('estado') == 'activo':
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar un préstamo ACTIVO. Primero debe ser devuelto."
+        )
+
     if not service.delete_prestamo(supabase, prestamo_id):
         raise HTTPException(status_code=404, detail="Préstamo no encontrado")
+
     return {"message": "Préstamo eliminado correctamente"}

@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../../Front_inventario_CIE"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "Front_inventario_CIE"
+	}
+}

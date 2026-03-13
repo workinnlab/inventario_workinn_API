@@ -73,11 +73,28 @@ def crear_equipo(equipo: EquipoCreate, supabase: Client = Depends(get_supabase))
 
 @router.put("/equipos/{equipo_id}", response_model=EquipoResponse, tags=["Inventario > Equipos"])
 def actualizar_equipo(equipo_id: int, equipo: EquipoUpdate, supabase: Client = Depends(get_supabase)):
-    """Actualizar equipo"""
+    """
+    Actualizar equipo
+
+    VALIDACIONES:
+    - NO cambiar a 'disponible' si tiene préstamos activos
+    """
+    update_data = equipo.model_dump(exclude_unset=True)
+
+    # VALIDACIÓN: No cambiar a 'disponible' si tiene préstamos activos
+    if 'estado' in update_data and update_data['estado'] == 'disponible':
+        prestamos_activos = supabase.table("prestamos").select("*").eq("equipo_id", equipo_id).eq("estado", "activo").execute()
+
+        if prestamos_activos.data:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No se puede cambiar a 'disponible': el equipo tiene {len(prestamos_activos.data)} préstamo(s) activo(s)"
+            )
+
     updated = service.update_equipo(
-        supabase, 
-        equipo_id, 
-        equipo.model_dump(exclude_unset=True)
+        supabase,
+        equipo_id,
+        update_data
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
@@ -86,7 +103,21 @@ def actualizar_equipo(equipo_id: int, equipo: EquipoUpdate, supabase: Client = D
 
 @router.delete("/equipos/{equipo_id}", tags=["Inventario > Equipos"])
 def eliminar_equipo(equipo_id: int, supabase: Client = Depends(get_supabase)):
-    """Eliminar equipo"""
+    """
+    Eliminar equipo
+
+    VALIDACIONES:
+    - NO eliminar si tiene préstamos activos
+    """
+    # VALIDACIÓN: Verificar si tiene préstamos activos
+    prestamos_activos = supabase.table("prestamos").select("*").eq("equipo_id", equipo_id).eq("estado", "activo").execute()
+
+    if prestamos_activos.data:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede eliminar: el equipo tiene {len(prestamos_activos.data)} préstamo(s) activo(s)"
+        )
+
     if not service.delete_equipo(supabase, equipo_id):
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
     return {"message": "Equipo eliminado correctamente"}
@@ -251,11 +282,26 @@ def crear_material(material: MaterialCreate, supabase: Client = Depends(get_supa
 
 @router.put("/materiales/{material_id}", response_model=MaterialResponse, tags=["Inventario > Materiales"])
 def actualizar_material(material_id: int, material: MaterialUpdate, supabase: Client = Depends(get_supabase)):
-    """Actualizar material"""
+    """
+    Actualizar material
+
+    VALIDACIONES:
+    - NO permitir valores negativos (usado, en_uso, en_stock)
+    """
+    # VALIDACIÓN: No permitir valores negativos
+    update_data = material.model_dump(exclude_unset=True)
+
+    for campo in ['usado', 'en_uso', 'en_stock']:
+        if campo in update_data and update_data[campo] < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El campo '{campo}' no puede ser negativo. Valor actual: {update_data[campo]}"
+            )
+
     updated = service.update_material(
         supabase,
         material_id,
-        material.model_dump(exclude_unset=True)
+        update_data
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Material no encontrado")
