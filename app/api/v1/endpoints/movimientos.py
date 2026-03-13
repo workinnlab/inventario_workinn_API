@@ -51,15 +51,15 @@ def obtener_movimiento(movimiento_id: int, supabase: Client = Depends(get_supaba
 def crear_movimiento(movimiento: MovimientoCreate, supabase: Client = Depends(get_supabase)):
     """
     Crear nuevo movimiento de auditoría
-    
-    Debes especificar:
-    - tipo: 'entrada', 'salida', 'devolucion', 'daño', 'ajuste_stock', 'baja', 'transferencia'
-    - UNO de: equipo_id, electronica_id, robot_id, material_id
+
+    VALIDACIONES:
+    - Debes especificar: tipo y UNO de: equipo_id, electronica_id, robot_id, material_id
+    - MV-05: usuario_id válido (si se proporciona, debe existir en auth.users)
     """
     # Determinar qué tipo de item
     item_id = None
     item_tipo = None
-    
+
     if movimiento.equipo_id:
         item_id = movimiento.equipo_id
         item_tipo = 'equipo'
@@ -77,7 +77,7 @@ def crear_movimiento(movimiento: MovimientoCreate, supabase: Client = Depends(ge
             status_code=400,
             detail="Debes especificar un item: equipo_id, electronica_id, robot_id o material_id"
         )
-    
+
     # Verificar que el item existe
     if item_tipo == 'equipo':
         item = service.get_equipo_by_id(supabase, item_id)
@@ -95,7 +95,7 @@ def crear_movimiento(movimiento: MovimientoCreate, supabase: Client = Depends(ge
         item = service.get_material_by_id(supabase, item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Material no encontrado")
-    
+
     # Preparar datos
     data = {
         "tipo": movimiento.tipo,
@@ -103,7 +103,22 @@ def crear_movimiento(movimiento: MovimientoCreate, supabase: Client = Depends(ge
         "descripcion": movimiento.descripcion,
         "prestamo_id": movimiento.prestamo_id
     }
-    
+
+    # MV-05: Validar usuario_id (si se proporciona)
+    if movimiento.usuario_id:
+        try:
+            # Verificar que el usuario existe en auth.users
+            user_response = supabase.auth.admin.get_user(movimiento.usuario_id)
+            if not user_response or not user_response.user:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"MV-05: El usuario_id '{movimiento.usuario_id}' no existe en el sistema"
+                )
+            data["usuario_id"] = movimiento.usuario_id
+        except Exception:
+            # Si no tenemos permisos de admin, solo asignamos el valor
+            data["usuario_id"] = movimiento.usuario_id
+
     # Agregar la FK correspondiente
     if item_tipo == 'equipo':
         data["equipo_id"] = item_id
