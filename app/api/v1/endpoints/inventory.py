@@ -168,15 +168,22 @@ def crear_electronica(electronica: ElectronicaCreate, supabase: Client = Depends
     Crear nuevo elemento de electrónica
 
     VALIDACIONES:
-    - en_uso >= 0
-    - en_stock >= 0
-    - en_uso + en_stock = total (automático por columna generada)
+    - EL-02: en_uso >= 0
+    - EL-03: en_stock >= 0
+    - EL-05: No permitir valores negativos
+    - EL-04: en_uso + en_stock = total (automático por columna generada)
     """
-    # VALIDACIÓN: No permitir valores negativos
+    # VALIDACIÓN EL-02, EL-03, EL-05: No permitir valores negativos
     if electronica.en_uso < 0:
-        raise HTTPException(status_code=400, detail="en_uso no puede ser negativo")
+        raise HTTPException(
+            status_code=400,
+            detail="EL-02: en_uso no puede ser negativo"
+        )
     if electronica.en_stock < 0:
-        raise HTTPException(status_code=400, detail="en_stock no puede ser negativo")
+        raise HTTPException(
+            status_code=400,
+            detail="EL-03: en_stock no puede ser negativo"
+        )
 
     return service.create_electronica(
         supabase,
@@ -251,20 +258,30 @@ def crear_robot(robot: RobotCreate, supabase: Client = Depends(get_supabase)):
     Crear nuevo robot
 
     VALIDACIONES:
-    - fuera_de_servicio >= 0
-    - en_uso >= 0
-    - disponible >= 0
-    - fuera_de_servicio + en_uso + disponible = total (automático)
+    - RO-02: fuera_de_servicio >= 0
+    - RO-03: en_uso >= 0
+    - RO-04: disponible >= 0
+    - RO-06: No permitir valores negativos
+    - RO-05: fuera_de_servicio + en_uso + disponible = total (automático)
     """
-    # VALIDACIÓN: No permitir valores negativos
+    # VALIDACIÓN RO-02, RO-03, RO-04, RO-06: No permitir valores negativos
     if robot.fuera_de_servicio < 0:
-        raise HTTPException(status_code=400, detail="fuera_de_servicio no puede ser negativo")
+        raise HTTPException(
+            status_code=400,
+            detail="RO-02: fuera_de_servicio no puede ser negativo"
+        )
     if robot.en_uso < 0:
-        raise HTTPException(status_code=400, detail="en_uso no puede ser negativo")
+        raise HTTPException(
+            status_code=400,
+            detail="RO-03: en_uso no puede ser negativo"
+        )
     if robot.disponible < 0:
-        raise HTTPException(status_code=400, detail="disponible no puede ser negativo")
+        raise HTTPException(
+            status_code=400,
+            detail="RO-04: disponible no puede ser negativo"
+        )
 
-    # VALIDACIÓN: Verificar coherencia (la suma debe ser consistente)
+    # VALIDACIÓN RO-05: Verificar coherencia (la suma debe ser consistente)
     total_esperado = robot.fuera_de_servicio + robot.en_uso + robot.disponible
 
     return service.create_robot(

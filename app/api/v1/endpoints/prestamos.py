@@ -163,6 +163,8 @@ def listar_prestamos_activos(supabase: Client = Depends(get_supabase)):
 
     NOTA: También incluye lógica para marcar automáticamente como 'vencidos'
     los préstamos que pasaron su fecha_limite
+
+    RN-03: Retorna información de días restantes para alertas
     """
     # Primero, marcar como vencidos los que ya pasaron fecha_limite
     from datetime import datetime, timezone
@@ -184,6 +186,39 @@ def listar_prestamos_activos(supabase: Client = Depends(get_supabase)):
 
     # Retornar préstamos activos
     return service.get_prestamos_activos(supabase)
+
+
+@router.get("/prestamos/por-vencer", response_model=List[PrestamoResponse], tags=["Préstamos > Gestión"])
+def listar_prestamos_por_vencer(
+    dias: int = Query(5, ge=1, description="Días para considerar como 'por vencer'"),
+    supabase: Client = Depends(get_supabase)
+):
+    """
+    RN-03: Obtener préstamos que están por vencer en los próximos X días
+
+    Útil para alertas y recordatorios
+    """
+    from datetime import datetime, timezone, timedelta
+
+    fecha_actual = datetime.now(timezone.utc)
+    fecha_limite = fecha_actual + timedelta(days=dias)
+
+    # Obtener préstamos activos
+    prestamos_activos = supabase.table("prestamos").select("*").eq("estado", "activo").execute()
+
+    # Filtrar los que vencen en los próximos X días
+    prestamos_por_vencer = []
+    for prestamo in prestamos_activos.data:
+        fecha_limite_str = prestamo.get('fecha_limite')
+        if fecha_limite_str:
+            try:
+                fecha_prestamo_limite = datetime.fromisoformat(fecha_limite_str.replace('Z', '+00:00'))
+                if fecha_actual <= fecha_prestamo_limite <= fecha_limite:
+                    prestamos_por_vencer.append(prestamo)
+            except Exception:
+                pass
+
+    return prestamos_por_vencer
 
 
 @router.get("/prestamos/{prestamo_id}", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
@@ -231,13 +266,23 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
     # ========================================================================
     # VALIDACIÓN 0: fecha_limite >= fecha_actual
     # ========================================================================
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
     if prestamo.fecha_limite:
         fecha_actual = datetime.now(timezone.utc)
         if prestamo.fecha_limite < fecha_actual:
             raise HTTPException(
                 status_code=400,
                 detail="fecha_limite debe ser mayor o igual a la fecha actual"
+            )
+
+        # RN-02: Validar que fecha_limite no exceda el límite máximo de días
+        LIMITE_DIAS_PRESTAMO = 30  # Máximo 30 días por préstamo
+        fecha_maxima = fecha_actual + timedelta(days=LIMITE_DIAS_PRESTAMO)
+
+        if prestamo.fecha_limite > fecha_maxima:
+            raise HTTPException(
+                status_code=400,
+                detail=f"RN-02: fecha_limite no puede exceder {LIMITE_DIAS_PRESTAMO} días. Fecha máxima: {fecha_maxima.strftime('%Y-%m-%d')}"
             )
 
     # ========================================================================
@@ -412,11 +457,40 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
 
 @router.put("/prestamos/{prestamo_id}", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
 def actualizar_prestamo(prestamo_id: int, prestamo: PrestamoUpdate, supabase: Client = Depends(get_supabase)):
-    """Actualizar préstamo (ej: marcar como devuelto)"""
+    """
+    Actualizar préstamo
+
+    VALIDACIONES:
+    - PS-09: fecha_devolucion >= fecha_prestamo (si se proporciona)
+    """
+    update_data = prestamo.model_dump(exclude_unset=True)
+
+    # PS-09: Validar que fecha_devolucion >= fecha_prestamo
+    if 'fecha_devolucion' in update_data and update_data['fecha_devolucion']:
+        # Obtener el préstamo para verificar fecha_prestamo
+        prestamo_actual = service.get_prestamo_by_id(supabase, prestamo_id)
+        if prestamo_actual:
+            fecha_prestamo_str = prestamo_actual.get('fecha_prestamo')
+            fecha_devolucion_str = update_data['fecha_devolucion']
+
+            if fecha_prestamo_str and fecha_devolucion_str:
+                from datetime import datetime
+                try:
+                    fecha_prestamo = datetime.fromisoformat(fecha_prestamo_str.replace('Z', '+00:00'))
+                    fecha_devolucion = datetime.fromisoformat(fecha_devolucion_str.replace('Z', '+00:00'))
+
+                    if fecha_devolucion < fecha_prestamo:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="PS-09: fecha_devolucion debe ser mayor o igual a fecha_prestamo"
+                        )
+                except ValueError:
+                    pass  # Si no se puede parsear, continuar
+
     updated = service.update_prestamo(
         supabase,
         prestamo_id,
-        prestamo.model_dump(exclude_unset=True)
+        update_data
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Préstamo no encontrado")

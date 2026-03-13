@@ -132,16 +132,31 @@ def crear_movimiento(movimiento: MovimientoCreate, supabase: Client = Depends(ge
     return service.create_movimiento(supabase, data)
 
 
+@router.put("/movimientos/{movimiento_id}", tags=["Auditoría > Movimientos"])
+def actualizar_movimiento(movimiento_id: int):
+    """
+    Actualizar movimiento
+
+    VALIDACIÓN:
+    - RN-06: NO permitir modificar movimientos (auditoría inmutable)
+    - Esta operación está BLOQUEADA por diseño
+    """
+    raise HTTPException(
+        status_code=403,
+        detail="RN-06: ❌ OPERACIÓN NO PERMITIDA: Los movimientos de auditoría son INMUTABLES y no pueden ser modificados. Esto es por diseño para mantener la integridad del historial."
+    )
+
+
 @router.delete("/movimientos/{movimiento_id}", tags=["Auditoría > Movimientos"])
 def eliminar_movimiento(movimiento_id: int):
     """
     Eliminar movimiento
 
     VALIDACIÓN:
-    - NO permitir eliminar movimientos (auditoría debe ser inmutable)
+    - RN-06: NO permitir eliminar movimientos (auditoría inmutable)
     - Esta operación está BLOQUEADA por diseño
     """
     raise HTTPException(
         status_code=403,
-        detail="❌ OPERACIÓN NO PERMITIDA: Los movimientos de auditoría son INMUTABLES y no pueden ser eliminados. Esto es por diseño para mantener la integridad del historial."
+        detail="RN-06: ❌ OPERACIÓN NO PERMITIDA: Los movimientos de auditoría son INMUTABLES y no pueden ser eliminados. Esto es por diseño para mantener la integridad del historial."
     )
