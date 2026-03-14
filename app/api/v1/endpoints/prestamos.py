@@ -190,15 +190,20 @@ def listar_prestamos_activos(supabase: Client = Depends(get_supabase)):
 
 @router.get("/prestamos/por-vencer", response_model=List[PrestamoResponse], tags=["Préstamos > Gestión"])
 def listar_prestamos_por_vencer(
-    dias: int = Query(5, ge=1, description="Días para considerar como 'por vencer'"),
+    dias: Optional[int] = Query(None, ge=1, description="Días para considerar como 'por vencer'"),
     supabase: Client = Depends(get_supabase)
 ):
     """
     RN-03: Obtener préstamos que están por vencer en los próximos X días
 
-    Útil para alertas y recordatorios
+    Si no se proporciona 'dias', usa la configuración global (default: 7)
     """
     from datetime import datetime, timezone, timedelta
+
+    # Obtener configuración si no se proporciona dias
+    if dias is None:
+        config_response = supabase.table("configuracion_alertas").select("valor").eq("clave", "prestamo_por_vencer_dias").execute()
+        dias = config_response.data[0]['valor'] if config_response.data else 7
 
     fecha_actual = datetime.now(timezone.utc)
     fecha_limite = fecha_actual + timedelta(days=dias)

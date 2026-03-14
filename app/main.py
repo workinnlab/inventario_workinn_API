@@ -6,7 +6,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .core.config import settings
-from .api.v1.endpoints import inventory, prestamos, movimientos, auth, export, dashboard
+from .api.v1.endpoints import inventory, prestamos, movimientos, auth, export, dashboard, configuracion
 
 # Crear aplicación FastAPI
 app = FastAPI(
@@ -38,6 +38,7 @@ app.include_router(prestamos.router, prefix="/api/v1")
 app.include_router(movimientos.router, prefix="/api/v1")
 app.include_router(export.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
+app.include_router(configuracion.router, prefix="/api/v1")
 
 
 @app.get("/")

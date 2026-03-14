@@ -359,14 +359,21 @@ def eliminar_robot(robot_id: int, supabase: Client = Depends(get_supabase)):
 
 @router.get("/materiales/stock-minimo", response_model=List[MaterialResponse], tags=["Inventario > Materiales"])
 def get_materiales_stock_minimo(
-    minimo: int = Query(5, ge=1, description="Cantidad mínima de stock para alertar"),
+    minimo: Optional[int] = Query(None, ge=1, description="Cantidad mínima de stock para alertar"),
     supabase: Client = Depends(get_supabase)
 ):
     """
     Obtener materiales con stock mínimo o por debajo del mínimo
 
+    Si no se proporciona 'minimo', usa la configuración global (default: 5)
+
     Útil para alertas de reorden/abastecimiento
     """
+    # Obtener configuración si no se proporciona minimo
+    if minimo is None:
+        config_response = supabase.table("configuracion_alertas").select("valor").eq("clave", "stock_minimo_default").execute()
+        minimo = config_response.data[0]['valor'] if config_response.data else 5
+
     materiales = service.get_materiales(supabase, skip=0, limit=1000)
 
     # Filtrar materiales con stock <= minimo
