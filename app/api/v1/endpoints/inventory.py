@@ -26,9 +26,23 @@ router = APIRouter()
 def listar_equipos(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    estado: Optional[str] = Query(None, description="Filtrar por estado: disponible, en uso, prestado, mantenimiento, dañado"),
     supabase: Client = Depends(get_supabase)
 ):
-    """Obtener lista de equipos"""
+    """
+    Obtener lista de equipos
+
+    Query params:
+    - skip: Paginación (desde)
+    - limit: Paginación (cantidad)
+    - estado: Filtrar por estado (opcional)
+    """
+    # Si hay filtro por estado, filtrar
+    if estado:
+        response = supabase.table("equipos").select("*").eq("estado", estado).execute()
+        return response.data
+
+    # Sin filtro, retornar todos
     return service.get_equipos(supabase, skip=skip, limit=limit)
 
 
@@ -147,9 +161,21 @@ def eliminar_equipo(equipo_id: int, supabase: Client = Depends(get_supabase)):
 def listar_electronica(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    tipo: Optional[str] = Query(None, description="Filtrar por tipo"),
     supabase: Client = Depends(get_supabase)
 ):
-    """Obtener lista de electrónica"""
+    """
+    Obtener lista de electrónica
+
+    Query params:
+    - skip: Paginación
+    - limit: Paginación
+    - tipo: Filtrar por tipo (opcional)
+    """
+    if tipo:
+        response = supabase.table("electronica").select("*").eq("tipo", tipo).execute()
+        return response.data
+
     return service.get_electronica(supabase, skip=skip, limit=limit)
 
 
