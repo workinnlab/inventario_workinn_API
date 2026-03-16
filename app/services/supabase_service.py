@@ -50,9 +50,12 @@ def delete_equipo(supabase: Client, equipo_id: int) -> bool:
 # ELECTRÓNICA
 # ============================================================================
 
-def get_electronica(supabase: Client, skip: int = 0, limit: int = 100) -> List[Dict]:
-    """Obtener lista de electrónica"""
-    response = supabase.table("electronica").select("*").range(skip, skip + limit - 1).execute()
+def get_electronica(supabase: Client, skip: int = 0, limit: int = 20, nombre: str = None) -> List[Dict]:
+    """Obtener lista de electrónica con filtro opcional por nombre"""
+    query = supabase.table("electronica").select("*")
+    if nombre:
+        query = query.ilike("nombre", f"%{nombre}%") # ilike = case-insensitive
+    response = query.range(skip, skip + limit).execute()
     return response.data
 
 

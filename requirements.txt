@@ -17,3 +17,5 @@ openpyxl==3.1.2
 
 # Utilidades
 python-dotenv==1.0.0
+requests== 2.32.5
+pytest == 9.0.2
