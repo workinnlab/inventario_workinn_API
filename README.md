@@ -27,15 +27,6 @@ http://localhost:8000/docs
 
 ---
 
-## 🔐 Credenciales de Admin
-
-| Campo | Valor |
-|-------|-------|
-| **Email** | `admin@cie.com` |
-| **Password** | `Admin123!` |
-
----
-
 ## 📁 Estructura del Proyecto
 
 ```
