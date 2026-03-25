@@ -24,10 +24,17 @@ def register(
 ):
     """
     Registrar nuevo usuario en Supabase Auth
-    
-    El trigger 'crear_perfil_automatico' crea el perfil automáticamente
+
+    ⚠️ SEGURIDAD: Todos los usuarios se registran como 'viewer' por defecto.
+    Solo un admin puede promover a 'inventory' o 'admin' desde Supabase Dashboard.
+
+    Esto previene que cualquiera se registre como admin.
     """
     try:
+        # FORZAR rol viewer para todos los registros públicos
+        # Esto es por seguridad - solo admin puede crear roles privilegiados
+        rol_asignado = 'viewer'
+
         # Registrar usuario en Supabase Auth
         response = supabase.auth.sign_up({
             "email": data.email,
@@ -35,25 +42,25 @@ def register(
             "options": {
                 "data": {
                     "nombre": data.nombre,
-                    "rol": data.rol or "viewer"
+                    "rol": rol_asignado  # Forzar viewer siempre
                 }
             }
         })
-        
+
         if not response.user:
             raise HTTPException(
                 status_code=400,
                 detail="Error al registrar usuario"
             )
-        
+
         return UserResponse(
             id=response.user.id,
             email=response.user.email,
             nombre=data.nombre,
-            rol=data.rol or "viewer",
+            rol=rol_asignado,
             activo=True
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=400,
