@@ -508,9 +508,9 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
     Marcar préstamo como devuelto
 
     VALIDACIONES:
-    - Solo devolver si está 'activo'
+    - Solo devolver si está 'activo' o 'vencido'
     - PS-14: Actualizar estado del equipo a 'disponible' al devolver
-    - EL-08: Ajustar stock/en_uso de electrónica al devolver
+    - EL-08: Ajustar stock de electrónica al devolver
     - RO-09: Ajustar disponible/en_uso de robots al devolver
     """
     try:
@@ -527,8 +527,12 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
         estado_actual = prestamo.get('estado', '')
         print(f"📊 Estado actual: {estado_actual}")
 
-        if estado_actual != 'activo':
-            raise HTTPException(status_code=400, detail=f"El préstamo no está activo (estado: {estado_actual})")
+        # ✅ Permitir 'activo' y 'vencido'
+        if estado_actual not in ['activo', 'vencido']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El préstamo no está activo o vencido (estado: {estado_actual})"
+            )
 
         # Usar formato de fecha compatible con PostgreSQL
         from datetime import datetime, timezone

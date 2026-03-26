@@ -105,29 +105,39 @@ def actualizar_equipo(equipo_id: int, equipo: EquipoUpdate, supabase: Client = D
     """
     Actualizar equipo
 
-    VALIDACIONES:
-    - NO cambiar a 'disponible' si tiene préstamos activos
-    - NO cambiar a 'baja' o 'dado de baja' si tiene préstamos activos
+    DEBUG: Agrega logging para debuggear problema "dispositivo no encontrado"
     """
+    # Debug logging
+    print(f"🔧 [DEBUG] Actualizando equipo ID: {equipo_id}")
+    print(f"📝 [DEBUG] Datos: {equipo.model_dump(exclude_unset=True)}")
+
     update_data = equipo.model_dump(exclude_unset=True)
 
-    # VALIDACIÓN: No cambiar a 'disponible' o 'baja' si tiene préstamos activos
-    if 'estado' in update_data and update_data['estado'] in ['disponible', 'baja', 'dado de baja']:
+    # VALIDACIÓN: No cambiar a 'disponible' si tiene préstamos activos
+    if 'estado' in update_data and update_data['estado'] == 'disponible':
         prestamos_activos = supabase.table("prestamos").select("*").eq("equipo_id", equipo_id).eq("estado", "activo").execute()
 
         if prestamos_activos.data:
             raise HTTPException(
                 status_code=400,
-                detail=f"No se puede cambiar a '{update_data['estado']}': el equipo tiene {len(prestamos_activos.data)} préstamo(s) activo(s). Primero deben ser devueltos."
+                detail=f"No se puede cambiar a 'disponible': el equipo tiene {len(prestamos_activos.data)} préstamo(s) activo(s)"
             )
 
+    # Actualizar equipo
+    print(f"🔄 [DEBUG] Ejecutando update en Supabase...")
     updated = service.update_equipo(
         supabase,
         equipo_id,
         update_data
     )
+
+    # Debug logging del resultado
+    print(f"✅ [DEBUG] Resultado: {updated}")
+
     if not updated:
+        print(f"❌ [DEBUG] ERROR: Equipo {equipo_id} no encontrado")
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
+
     return updated
 
 
