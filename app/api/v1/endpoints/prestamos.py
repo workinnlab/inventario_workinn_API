@@ -273,21 +273,35 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
     # ========================================================================
     from datetime import datetime, timezone, timedelta
     if prestamo.fecha_limite:
-        fecha_actual = datetime.now(timezone.utc)
-        if prestamo.fecha_limite < fecha_actual:
+        try:
+            fecha_actual = datetime.now(timezone.utc)
+            # Parsear la fecha_limite si es string
+            if isinstance(prestamo.fecha_limite, str):
+                fecha_limite_dt = datetime.fromisoformat(prestamo.fecha_limite.replace('Z', '+00:00'))
+            else:
+                fecha_limite_dt = prestamo.fecha_limite
+
+            if fecha_limite_dt < fecha_actual:
+                raise HTTPException(
+                    status_code=400,
+                    detail="fecha_limite debe ser mayor o igual a la fecha actual"
+                )
+
+            # RN-02: Validar que fecha_limite no exceda el límite máximo de días
+            LIMITE_DIAS_PRESTAMO = 30  # Máximo 30 días por préstamo
+            fecha_maxima = fecha_actual + timedelta(days=LIMITE_DIAS_PRESTAMO)
+
+            if fecha_limite_dt > fecha_maxima:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"RN-02: fecha_limite no puede exceder {LIMITE_DIAS_PRESTAMO} días. Fecha máxima: {fecha_maxima.strftime('%Y-%m-%d')}"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
             raise HTTPException(
                 status_code=400,
-                detail="fecha_limite debe ser mayor o igual a la fecha actual"
-            )
-
-        # RN-02: Validar que fecha_limite no exceda el límite máximo de días
-        LIMITE_DIAS_PRESTAMO = 30  # Máximo 30 días por préstamo
-        fecha_maxima = fecha_actual + timedelta(days=LIMITE_DIAS_PRESTAMO)
-
-        if prestamo.fecha_limite > fecha_maxima:
-            raise HTTPException(
-                status_code=400,
-                detail=f"RN-02: fecha_limite no puede exceder {LIMITE_DIAS_PRESTAMO} días. Fecha máxima: {fecha_maxima.strftime('%Y-%m-%d')}"
+                detail=f"Error al validar fecha_limite: {str(e)}"
             )
 
     # ========================================================================

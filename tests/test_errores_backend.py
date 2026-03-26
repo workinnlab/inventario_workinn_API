@@ -218,44 +218,49 @@ class TestErroresBackend:
             "codigo": f"TEST-ERR6-{int(time.time())}",
             "estado": "disponible"
         })
-        
+
         if r1 and r1.status_code == 200:
             equipo_id = r1.json().get('id')
-            
-            # Crear prestatario
+
+            # Crear prestatario ACTIVO (no usar ID fijo)
             r2 = self.make_request('POST', '/prestatarios', {
-                "nombre": f"Test {int(time.time())}",
+                "nombre": f"Test Activo {int(time.time())}",
                 "dependencia": "Test",
-                "email": f"test{int(time.time())}@cie.com"
+                "email": f"testactivo{int(time.time())}@cie.com",
+                "activo": True
             })
-            
+
             if r2 and r2.status_code == 200:
                 prestatario_id = r2.json().get('id')
-                
-                # Crear préstamo con fecha en el pasado (vencido)
-                fecha_pasado = (datetime.now() - timedelta(days=30)).isoformat()
-                
+
+                # Crear préstamo CON fecha futura (no se puede crear con fecha en el pasado)
+                from datetime import datetime, timedelta
+                fecha_futura = (datetime.now() + timedelta(days=7)).isoformat()
+
                 r3 = self.make_request('POST', '/prestamos', {
                     "prestatario_id": prestatario_id,
                     "equipo_id": equipo_id,
-                    "fecha_limite": fecha_pasado
+                    "fecha_limite": fecha_futura
                 })
-                
+
                 if r3 and r3.status_code == 200:
                     prestamo_id = r3.json().get('id')
-                    
-                    # Verificar que está 'activo' (o 'vencido' si el auto-update funcionó)
-                    r4 = self.make_request('GET', f'/prestamos/{prestamo_id}')
-                    estado_antes = r4.json().get('estado') if r4 else None
-                    
+
+                    # Actualizar préstamo para que esté vencido (cambiar fecha_limite al pasado)
+                    fecha_pasado = (datetime.now() - timedelta(days=30)).isoformat()
+                    r4 = self.make_request('PUT', f'/prestamos/{prestamo_id}', {
+                        "fecha_limite": fecha_pasado,
+                        "estado": "vencido"
+                    })
+
                     # Intentar devolver (debería funcionar aunque esté vencido)
                     r5 = self.make_request('POST', f'/prestamos/{prestamo_id}/devolver')
-                    
+
                     passed = r5 and r5.status_code == 200
                     self.test_result("6", "Devolver préstamo vencido",
                                    passed, "200 OK", str(r5.status_code) if r5 else "Error")
                     return
-        
+
         self.failed += 1
         self.test_result("6", "Devolver vencido (setup falló)", False, "200 OK", "Error en setup")
     
