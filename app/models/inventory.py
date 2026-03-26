@@ -10,14 +10,14 @@ from ..core.database import Base
 class Equipo(Base):
     """Modelo para la tabla 'equipos'"""
     __tablename__ = "equipos"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(Text, nullable=False)
     marca = Column(Text, nullable=False)
     codigo = Column(Text, unique=True, nullable=False, index=True)
     accesorios = Column(Text)
     serial = Column(Text)
-    estado = Column(Text)
+    estado = Column(Text, check_constraint="estado IN ('disponible', 'en uso', 'prestado', 'mantenimiento', 'dañado', 'arreglado')")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
