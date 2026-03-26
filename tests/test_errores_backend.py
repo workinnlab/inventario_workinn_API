@@ -84,9 +84,9 @@ class TestErroresBackend:
             print(f"Error en login: {str(e)}")
             return False
     
-    def make_request(self, method: str, endpoint: str, data: Optional[Dict] = None, 
-                     headers: Optional[Dict] = None, timeout: int = 60) -> Optional[requests.Response]:
-        """Hacer una request a la API"""
+    def make_request(self, method: str, endpoint: str, data: Optional[Dict] = None,
+                     headers: Optional[Dict] = None, timeout: int = 120) -> Optional[requests.Response]:
+        """Hacer una request a la API (timeout aumentado a 120s para Render cold start)"""
         url = f"{self.base_url}{endpoint}"
         
         if headers is None:
@@ -211,7 +211,9 @@ class TestErroresBackend:
     
     def test_error_6_prestamos_vencidos_devolver(self):
         """Error #6: Préstamos vencidos no se pueden devolver"""
-        # Crear equipo
+        print("\n[DEBUG Error #6] Iniciando test...")
+
+        # Paso 1: Crear equipo
         r1 = self.make_request('POST', '/equipos', {
             "nombre": f"Test Error 6 {int(time.time())}",
             "marca": "Test",
@@ -219,50 +221,78 @@ class TestErroresBackend:
             "estado": "disponible"
         })
 
-        if r1 and r1.status_code == 200:
-            equipo_id = r1.json().get('id')
+        if not (r1 and r1.status_code == 200):
+            self.failed += 1
+            self.test_result("6", "Crear equipo (setup)", False, "200 OK", str(r1.status_code) if r1 else "Error")
+            return
 
-            # Crear prestatario ACTIVO (no usar ID fijo)
-            r2 = self.make_request('POST', '/prestatarios', {
-                "nombre": f"Test Activo {int(time.time())}",
-                "dependencia": "Test",
-                "email": f"testactivo{int(time.time())}@cie.com",
-                "activo": True
-            })
+        equipo_id = r1.json().get('id')
+        print(f"[DEBUG] Equipo creado: ID={equipo_id}")
 
-            if r2 and r2.status_code == 200:
-                prestatario_id = r2.json().get('id')
+        # Paso 2: Crear prestatario ACTIVO
+        r2 = self.make_request('POST', '/prestatarios', {
+            "nombre": f"Test Activo {int(time.time())}",
+            "dependencia": "Test",
+            "email": f"testactivo{int(time.time())}@cie.com",
+            "activo": True
+        })
 
-                # Crear préstamo CON fecha futura (no se puede crear con fecha en el pasado)
-                from datetime import datetime, timedelta
-                fecha_futura = (datetime.now() + timedelta(days=7)).isoformat()
+        if not (r2 and r2.status_code == 200):
+            self.failed += 1
+            self.test_result("6", "Crear prestatario (setup)", False, "200 OK", str(r2.status_code) if r2 else "Error")
+            return
 
-                r3 = self.make_request('POST', '/prestamos', {
-                    "prestatario_id": prestatario_id,
-                    "equipo_id": equipo_id,
-                    "fecha_limite": fecha_futura
-                })
+        prestatario_id = r2.json().get('id')
+        print(f"[DEBUG] Prestatario creado: ID={prestatario_id}")
 
-                if r3 and r3.status_code == 200:
-                    prestamo_id = r3.json().get('id')
+        # Paso 3: Crear préstamo CON fecha FUTURA (no se puede con fecha pasada)
+        from datetime import datetime, timedelta
+        fecha_futura = (datetime.now() + timedelta(days=7)).isoformat().replace('+00:00', 'Z')
 
-                    # Actualizar préstamo para que esté vencido (cambiar fecha_limite al pasado)
-                    fecha_pasado = (datetime.now() - timedelta(days=30)).isoformat()
-                    r4 = self.make_request('PUT', f'/prestamos/{prestamo_id}', {
-                        "fecha_limite": fecha_pasado,
-                        "estado": "vencido"
-                    })
+        print(f"[DEBUG] Creando préstamo: prestatario_id={prestatario_id}, equipo_id={equipo_id}, fecha={fecha_futura}")
 
-                    # Intentar devolver (debería funcionar aunque esté vencido)
-                    r5 = self.make_request('POST', f'/prestamos/{prestamo_id}/devolver')
+        r3 = self.make_request('POST', '/prestamos', {
+            "prestatario_id": prestatario_id,
+            "equipo_id": equipo_id,
+            "fecha_limite": fecha_futura
+        })
 
-                    passed = r5 and r5.status_code == 200
-                    self.test_result("6", "Devolver préstamo vencido",
-                                   passed, "200 OK", str(r5.status_code) if r5 else "Error")
-                    return
+        print(f"[DEBUG] Response crear préstamo: Status={r3.status_code if r3 else 'None'}, Text={r3.text[:300] if r3 and hasattr(r3, 'text') else 'None'}")
 
-        self.failed += 1
-        self.test_result("6", "Devolver vencido (setup falló)", False, "200 OK", "Error en setup")
+        if not (r3 and r3.status_code == 200):
+            self.failed += 1
+            self.test_result("6", "Crear préstamo (setup)", False, "200 OK", str(r3.status_code) if r3 else f"Error: {r3.text[:100] if r3 and hasattr(r3, 'text') else 'None'}")
+            return
+
+        prestamo_id = r3.json().get('id')
+        print(f"[DEBUG] Préstamo creado: ID={prestamo_id}, fecha_limite={fecha_futura}")
+
+        # Paso 4: Actualizar préstamo para que esté VENCIDO
+        # Cambiar fecha_limite al pasado y estado a 'vencido'
+        fecha_pasado = (datetime.now() - timedelta(days=30)).isoformat().replace('+00:00', 'Z')
+
+        r4 = self.make_request('PUT', f'/prestamos/{prestamo_id}', {
+            "fecha_limite": fecha_pasado,
+            "estado": "vencido"
+        })
+
+        if not (r4 and r4.status_code == 200):
+            self.failed += 1
+            self.test_result("6", "Actualizar a vencido (setup)", False, "200 OK", str(r4.status_code) if r4 else f"Error: {r4.text[:100] if r4 else 'None'}")
+            return
+
+        print(f"[DEBUG] Préstamo actualizado a vencido")
+
+        # Paso 5: Intentar DEVOLVER el préstamo vencido (ESTO ES LO QUE QUEREMOS PROBAR)
+        r5 = self.make_request('POST', f'/prestamos/{prestamo_id}/devolver')
+
+        print(f"[DEBUG] Devolver préstamo: Status={r5.status_code if r5 else 'Error'}, Response={r5.text[:200] if r5 else 'None'}")
+
+        # El test PASÓ si podemos devolver un préstamo vencido
+        passed = r5 and r5.status_code == 200
+        self.test_result("6", "Devolver préstamo vencido",
+                       passed, "200 OK",
+                       str(r5.status_code) if r5 else f"Error: {r5.text[:100] if hasattr(r5, 'text') else 'None'}")
     
     def test_error_8_editar_equipo(self):
         """Error #8: No deja editar equipos"""

@@ -271,15 +271,29 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
     # ========================================================================
     # VALIDACIÓN 0: fecha_limite >= fecha_actual
     # ========================================================================
-    from datetime import datetime, timezone, timedelta
     if prestamo.fecha_limite:
         try:
+            from datetime import datetime, timezone, timedelta
+
+            # Obtener fecha actual con timezone
             fecha_actual = datetime.now(timezone.utc)
+
             # Parsear la fecha_limite si es string
             if isinstance(prestamo.fecha_limite, str):
-                fecha_limite_dt = datetime.fromisoformat(prestamo.fecha_limite.replace('Z', '+00:00'))
+                # Reemplazar Z con +00:00 para fromisoformat
+                fecha_str = prestamo.fecha_limite.replace('Z', '+00:00')
+                fecha_limite_dt = datetime.fromisoformat(fecha_str)
             else:
                 fecha_limite_dt = prestamo.fecha_limite
+
+            # Asegurar que fecha_limite tenga timezone info
+            if fecha_limite_dt.tzinfo is None:
+                # Asumir UTC si no tiene timezone
+                fecha_limite_dt = fecha_limite_dt.replace(tzinfo=timezone.utc)
+
+            # Asegurar que fecha_actual tenga timezone info (ya lo tiene)
+            if fecha_actual.tzinfo is None:
+                fecha_actual = fecha_actual.replace(tzinfo=timezone.utc)
 
             if fecha_limite_dt < fecha_actual:
                 raise HTTPException(
@@ -299,6 +313,9 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
         except HTTPException:
             raise
         except Exception as e:
+            print(f"❌ [DEBUG] Error validando fecha: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise HTTPException(
                 status_code=400,
                 detail=f"Error al validar fecha_limite: {str(e)}"
