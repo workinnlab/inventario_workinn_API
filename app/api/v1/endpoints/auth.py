@@ -35,15 +35,16 @@ def register(
         # Esto es por seguridad - solo admin puede crear roles privilegiados
         rol_asignado = 'viewer'
 
-        # Registrar usuario en Supabase Auth
+        # Registrar usuario en Supabase Auth SIN requerir confirmación de email
         response = supabase.auth.sign_up({
             "email": data.email,
             "password": data.password,
             "options": {
                 "data": {
                     "nombre": data.nombre,
-                    "rol": rol_asignado  # Forzar viewer siempre
-                }
+                    "rol": rol_asignado
+                },
+                "email_confirm": False  # No enviar email de confirmación
             }
         })
 
@@ -52,6 +53,19 @@ def register(
                 status_code=400,
                 detail="Error al registrar usuario"
             )
+
+        # CREAR PERFIL EXPLÍCITAMENTE (no depender del trigger)
+        try:
+            supabase.table("perfiles").insert({
+                "id": response.user.id,
+                "nombre": data.nombre,
+                "email": data.email,
+                "rol": rol_asignado,
+                "activo": True
+            }).execute()
+        except Exception as perfil_error:
+            # Si el trigger ya lo creó, no importa el error
+            print(f"Nota: Perfil podría ya existir o error menor: {perfil_error}")
 
         return UserResponse(
             id=response.user.id,
