@@ -28,32 +28,105 @@ def register(
 
     ⚠️ SEGURIDAD: Todos los usuarios se registran como 'viewer' por defecto.
     Solo un admin puede promover a 'inventory' o 'admin' desde Supabase Dashboard.
-
-    Esto previene que cualquiera se registre como admin.
     """
     try:
-        # FORZAR rol viewer para todos los registros públicos
-        # Esto es por seguridad - solo admin puede crear roles privilegiados
         rol_asignado = 'viewer'
+        user_id = None
 
-        # Registrar usuario en Supabase Auth SIN requerir confirmación de email
-        response = supabase.auth.sign_up({
-            "email": data.email,
-            "password": data.password,
-            "options": {
-                "data": {
+        # OPCIÓN 1: Usar admin API para crear y confirmar usuario directamente
+        try:
+            admin_response = supabase_admin.auth.admin.create_user({
+                "email": data.email,
+                "password": data.password,
+                "email_confirm": True,  # Confirmar inmediatamente
+                "user_metadata": {
                     "nombre": data.nombre,
                     "rol": rol_asignado
-                },
-                "email_confirm": False  # No enviar email de confirmación
-            }
-        })
+                }
+            })
+            
+            if admin_response.user:
+                user_id = admin_response.user.id
+                email_creado = admin_response.user.email
+                
+        except Exception as admin_error:
+            # OPCIÓN 2: Si falla admin API, usar sign_up normal
+            print(f"Admin API falló: {admin_error}, intentando sign_up normal")
+            
+            response = supabase.auth.sign_up({
+                "email": data.email,
+                "password": data.password,
+                "options": {
+                    "data": {
+                        "nombre": data.nombre,
+                        "rol": rol_asignado
+                    },
+                    "email_confirm": True  # Forzar confirmación
+                }
+            })
+            
+            if not response.user:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Error al registrar usuario"
+                )
+            
+            user_id = response.user.id
+            email_creado = response.user.email
+            
+            # Si está pendiente, try confirmar manualmente
+            if not email_creado:
+                try:
+                    supabase_admin.auth.admin.verify_pending_email_by_email(data.email)
+                except:
+                    pass
 
-        if not response.user:
+        if not user_id:
             raise HTTPException(
                 status_code=400,
-                detail="Error al registrar usuario"
+                detail="No se pudo crear usuario"
             )
+
+        # CREAR PERFIL EXPLÍCITAMENTE con el cliente admin
+        try:
+            perfil_result = supabase_admin.table("perfiles").insert({
+                "id": user_id,
+                "nombre": data.nombre,
+                "email": data.email,
+                "rol": rol_asignado,
+                "activo": True
+            }).execute()
+            
+            if not perfil_result.data:
+                # Si ya existe, está bien (trigger lo creó)
+                pass
+                
+        except Exception as perfil_error:
+            error_str = str(perfil_error)
+            # Si ya existe el perfil, no es error grave
+            if "duplicate" in error_str.lower() or "23505" in error_str:
+                print(f"Perfil ya existe: {perfil_error}")
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error al crear perfil: {error_str}"
+                )
+
+        return UserResponse(
+            id=user_id,
+            email=data.email,
+            nombre=data.nombre,
+            rol=rol_asignado,
+            activo=True
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error en registro: {str(e)}"
+        )
 
         # VERIFICAR que el usuario existe en auth.users
         user_check = supabase_admin.auth.get_user(response.user.id)
