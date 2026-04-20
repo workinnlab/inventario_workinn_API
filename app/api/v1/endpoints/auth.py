@@ -55,6 +55,14 @@ def register(
                 detail="Error al registrar usuario"
             )
 
+        # VERIFICAR que el usuario existe en auth.users
+        user_check = supabase_admin.auth.get_user(response.user.id)
+        if not user_check.user:
+            raise HTTPException(
+                status_code=400,
+                detail="Usuario no confirmado en auth"
+            )
+
         # CREAR PERFIL EXPLÍCITAMENTE (no depender del trigger)
         # Usar cliente admin para tener permisos de inserción
         try:
