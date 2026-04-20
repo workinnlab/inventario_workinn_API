@@ -4,7 +4,7 @@ Endpoints de autenticación usando Supabase Auth
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import Client
-from ....core.supabase_client import get_supabase
+from ....core.supabase_client import get_supabase, get_supabase_admin
 from ....schemas.auth import (
     LoginRequest,
     RegisterRequest,
@@ -20,7 +20,8 @@ security = HTTPBearer()
 @router.post("/register", response_model=UserResponse, tags=["Autenticación"])
 def register(
     data: RegisterRequest,
-    supabase: Client = Depends(get_supabase)
+    supabase: Client = Depends(get_supabase),
+    supabase_admin: Client = Depends(get_supabase_admin)
 ):
     """
     Registrar nuevo usuario en Supabase Auth
@@ -55,17 +56,31 @@ def register(
             )
 
         # CREAR PERFIL EXPLÍCITAMENTE (no depender del trigger)
+        # Usar cliente admin para tener permisos de inserción
         try:
-            supabase.table("perfiles").insert({
+            perfil_result = supabase_admin.table("perfiles").insert({
                 "id": response.user.id,
                 "nombre": data.nombre,
                 "email": data.email,
                 "rol": rol_asignado,
                 "activo": True
             }).execute()
+            
+            # Verificar que se creó
+            if not perfil_result.data:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Error al crear perfil: no se recibió confirmación"
+                )
+                
+        except HTTPException:
+            raise
         except Exception as perfil_error:
-            # Si el trigger ya lo creó, no importa el error
-            print(f"Nota: Perfil podría ya existir o error menor: {perfil_error}")
+            # Loguear el error real
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error al crear perfil: {str(perfil_error)}"
+            )
 
         return UserResponse(
             id=response.user.id,

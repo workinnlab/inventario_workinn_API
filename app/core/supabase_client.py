@@ -11,6 +11,7 @@ from functools import lru_cache
 def get_supabase_client() -> Client:
     """
     Obtiene el cliente de Supabase (singleton con caché)
+    Usa la key pública (anon)
     
     Returns:
         Client: Cliente de Supabase configurado
@@ -18,6 +19,21 @@ def get_supabase_client() -> Client:
     return create_client(
         settings.SUPABASE_URL,
         settings.SUPABASE_KEY
+    )
+
+
+@lru_cache()
+def get_supabase_admin() -> Client:
+    """
+    Obtiene el cliente ADMIN de Supabase (con service_role key)
+    Usa para operaciones privilegiadas como crear perfiles
+    
+    Returns:
+        Client: Cliente de Supabase con privilegios de admin
+    """
+    return create_client(
+        settings.SUPABASE_URL,
+        settings.SUPABASE_SERVICE_KEY
     )
 
 
