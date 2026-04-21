@@ -23,12 +23,11 @@ def listar_movimientos(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     tipo: Optional[str] = Query(None),
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
-    Obtener lista de movimientos (auditoría) - Solo inventory y admin
-    
+    Obtener lista de movimientos (auditoría)
+
     Tipos de movimiento:
     - entrada: Item ingresa al inventario
     - salida: Item sale temporalmente (préstamo)
@@ -44,10 +43,9 @@ def listar_movimientos(
 @router.get("/movimientos/{movimiento_id}", response_model=MovimientoResponse, tags=["Auditoría > Movimientos"])
 def obtener_movimiento(
     movimiento_id: int,
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
-    """Obtener movimiento por ID - Solo inventory y admin"""
+    """Obtener movimiento por ID"""
     movimiento = service.get_movimiento_by_id(supabase, movimiento_id)
     if not movimiento:
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")

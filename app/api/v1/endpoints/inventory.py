@@ -29,7 +29,6 @@ def listar_equipos(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     estado: Optional[str] = Query(None, description="Filtrar por estado: disponible, en uso, prestado, mantenimiento, dañado"),
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
@@ -40,19 +39,16 @@ def listar_equipos(
     - limit: Paginación (cantidad)
     - estado: Filtrar por estado (opcional)
     """
-    # Si hay filtro por estado, filtrar
     if estado:
         response = supabase.table("equipos").select("*").eq("estado", estado).execute()
         return response.data
 
-    # Sin filtro, retornar todos
     return service.get_equipos(supabase, skip=skip, limit=limit)
 
 
 @router.get("/equipos/{equipo_id}", response_model=EquipoResponse, tags=["Inventario > Equipos"])
 def obtener_equipo(
     equipo_id: int,
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener equipo por ID"""
@@ -65,7 +61,6 @@ def obtener_equipo(
 @router.get("/equipos/codigo/{codigo}", response_model=EquipoResponse, tags=["Inventario > Equipos"])
 def obtener_equipo_por_codigo(
     codigo: str,
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener equipo por código (ej: PC-01)"""
@@ -232,7 +227,6 @@ def listar_electronica(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     tipo: Optional[str] = Query(None, description="Filtrar por tipo"),
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
@@ -253,7 +247,6 @@ def listar_electronica(
 @router.get("/electronica/{electronica_id}", response_model=ElectronicaResponse, tags=["Inventario > Electrónica"])
 def obtener_electronica(
     electronica_id: int,
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener electrónica por ID"""
@@ -386,7 +379,6 @@ def eliminar_electronica(
 def listar_robots(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener lista de robots"""
@@ -396,7 +388,6 @@ def listar_robots(
 @router.get("/robots/{robot_id}", response_model=RobotResponse, tags=["Inventario > Robots"])
 def obtener_robot(
     robot_id: int,
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener robot por ID"""
@@ -536,7 +527,6 @@ def eliminar_robot(
 @router.get("/materiales/stock-minimo", response_model=List[MaterialResponse], tags=["Inventario > Materiales"])
 def get_materiales_stock_minimo(
     minimo: Optional[int] = Query(None, ge=1, description="Cantidad mínima de stock para alertar"),
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
@@ -566,7 +556,6 @@ def get_materiales_stock_minimo(
 def listar_materiales(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener lista de materiales"""
@@ -576,7 +565,6 @@ def listar_materiales(
 @router.get("/materiales/{material_id}", response_model=MaterialResponse, tags=["Inventario > Materiales"])
 def obtener_material(
     material_id: int,
-    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener material por ID"""
