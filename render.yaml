@@ -15,11 +15,11 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.0
       - key: SUPABASE_URL
-        sync: false
+        value: "https://tnaqdjqcgqadblgtbxwl.supabase.co"
       - key: SUPABASE_KEY
-        sync: false
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRuYXFkanFjZ3FhZGJsZ3RieHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MzM5ODIsImV4cCI6MjA4ODMwOTk4Mn0.TkGBw6sT9N_P7bIUD08ufzKPKKAl_attcLWzgok3_hM"
       - key: SUPABASE_SERVICE_KEY
-        sync: false
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRuYXFkanFjZ3FhZGJsZ3RieHdsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjczMzk4MiwiZXhwIjoyMDg4MzA5OTgyfQ.3hdLlVcttMuWghnmrL7-ZaHpUsElwoePf3kLOfRNzsY"
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: ALGORITHM
