@@ -7,7 +7,7 @@ from supabase import Client
 from ....core.supabase_client import get_supabase
 from ....core.auth import require_inventory
 from ....schemas.auth import PerfilResponse
-from ....schemas.inventory import MovimientoResponse
+from ....schemas.inventory import MovimientoResponse, MovimientoCreate
 from ....services import supabase_service as service
 
 
