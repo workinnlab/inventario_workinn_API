@@ -281,3 +281,118 @@ def create_movimiento(supabase: Client, data: Dict[str, Any]) -> Dict:
     response = supabase.table("movimientos").insert(data).execute()
     return response.data[0] if response.data else None
 
+
+def registrar_movimiento(
+    supabase: Client,
+    tipo: str,
+    item_type: str,
+    item_id: int,
+    usuario_id: str,
+    descripcion: str,
+    prestamo_id: int = None,
+    cantidad: int = 1
+) -> Dict:
+    """
+    Registrar un movimiento de auditoría de forma estandarizada.
+
+    Args:
+        supabase: Cliente de Supabase
+        tipo: Tipo de movimiento (entrada, salida, devolucion, baja, actualizacion, creacion_prestatario, inactivacion_prestatario)
+        item_type: Tipo de item (equipo, electronica, robot, material)
+        item_id: ID del item
+        usuario_id: UUID del usuario que realiza la acción
+        descripcion: Descripción del movimiento
+        prestamo_id: ID del préstamo relacionado (opcional)
+        cantidad: Cantidad (default 1)
+
+    Returns:
+        Dict con el movimiento creado
+    """
+    data = {
+        "tipo": tipo,
+        "descripcion": descripcion,
+        "usuario_id": usuario_id,
+        "cantidad": cantidad
+    }
+
+    # Agregar la FK correspondiente según el tipo de item
+    if item_type == "equipo":
+        data["equipo_id"] = item_id
+    elif item_type == "electronica":
+        data["electronica_id"] = item_id
+    elif item_type == "robot":
+        data["robot_id"] = item_id
+    elif item_type == "material":
+        data["material_id"] = item_id
+
+    if prestamo_id:
+        data["prestamo_id"] = prestamo_id
+
+    response = supabase.table("movimientos").insert(data).execute()
+    return response.data[0] if response.data else None
+
+
+# ============================================================================
+# NOTIFICACIONES
+# ============================================================================
+
+def get_notificaciones(supabase: Client, skip: int = 0, limit: int = 100) -> List[Dict]:
+    """Obtener lista de notificaciones"""
+    response = supabase.table("notificaciones").select("*").order("created_at", desc=True).range(skip, skip + limit - 1).execute()
+    return response.data
+
+
+def get_notificaciones_pendientes(supabase: Client) -> List[Dict]:
+    """Obtener notificaciones no leídas"""
+    response = supabase.table("notificaciones").select("*").eq("leida", False).order("created_at", desc=True).execute()
+    return response.data
+
+
+def crear_notificacion(
+    supabase: Client,
+    tipo: str,
+    titulo: str,
+    mensaje: str,
+    url: str = None,
+    data: Dict = None
+) -> Dict:
+    """Crear una nueva notificación"""
+    notif_data = {
+        "tipo": tipo,
+        "titulo": titulo,
+        "mensaje": mensaje,
+        "leida": False
+    }
+
+    if url:
+        notif_data["url"] = url
+    if data:
+        notif_data["data"] = data
+
+    response = supabase.table("notificaciones").insert(notif_data).execute()
+    return response.data[0] if response.data else None
+
+
+def marcar_notificacion_leida(supabase: Client, notificacion_id: int) -> Optional[Dict]:
+    """Marcar notificación como leída"""
+    response = supabase.table("notificaciones").update({"leida": True}).eq("id", notificacion_id).execute()
+    return response.data[0] if response.data else None
+
+
+def marcar_todas_leidas(supabase: Client) -> int:
+    """Marcar todas las notificaciones como leídas"""
+    response = supabase.table("notificaciones").update({"leida": True}).eq("leida", False).execute()
+    return len(response.data) if response.data else 0
+
+
+def eliminar_notificacion(supabase: Client, notificacion_id: int) -> bool:
+    """Eliminar una notificación"""
+    response = supabase.table("notificaciones").delete().eq("id", notificacion_id).execute()
+    return len(response.data) > 0
+
+
+def eliminar_notificaciones_leidas(supabase: Client) -> int:
+    """Eliminar todas las notificaciones leídas"""
+    response = supabase.table("notificaciones").delete().eq("leida", True).execute()
+    return len(response.data) if response.data else 0
+

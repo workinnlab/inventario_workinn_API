@@ -91,7 +91,7 @@ def crear_prestatario(
                 detail=f"Teléfono inválido: '{prestatario.telefono}'. Formato esperado: 3001234567 o +57 300 123 4567"
             )
 
-    return service.create_prestatario(
+    nuevo_prestatario = service.create_prestatario(
         supabase,
         {
             "nombre": prestatario.nombre,
@@ -101,6 +101,18 @@ def crear_prestatario(
             "email": prestatario.email
         }
     )
+
+    if nuevo_prestatario:
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="creacion_prestatario",
+            item_type="prestatario",
+            item_id=nuevo_prestatario["id"],
+            usuario_id=current_user.id,
+            descripcion=f"Nuevo prestatario '{prestatario.nombre}' registrado"
+        )
+
+    return nuevo_prestatario
 
 
 @router.put("/prestatarios/{prestatario_id}", response_model=PrestatarioResponse, tags=["Préstamos > Prestatarios"])
@@ -155,9 +167,22 @@ def eliminar_prestatario(
             detail=f"No se puede inactivar: el prestatario tiene {len(prestamos_activos.data)} préstamo(s) activo(s). Primero deben ser devueltos."
         )
 
+    prestatario = service.get_prestatario_by_id(supabase, prestatario_id)
+    prestatario_nombre = prestatario.get('nombre', 'Unknown') if prestatario else 'Unknown'
+
     updated = service.update_prestatario(supabase, prestatario_id, {"activo": False})
     if not updated:
         raise HTTPException(status_code=404, detail="Prestatario no encontrado")
+
+    service.registrar_movimiento(
+        supabase=supabase,
+        tipo="inactivacion_prestatario",
+        item_type="prestatario",
+        item_id=prestatario_id,
+        usuario_id=current_user.id,
+        descripcion=f"Prestatario '{prestatario_nombre}' inactivado"
+    )
+
     return {"message": "Prestatario marcado como inactivo"}
 
 
@@ -521,7 +546,40 @@ def crear_prestamo(
             nuevo_stock = max(0, material.get('en_stock', 0) - 1)
             supabase.table("materiales").update({"en_stock": nuevo_stock}).eq("id", item_id).execute()
 
-    return service.create_prestamo(supabase, data)
+    nuevo_prestamo = service.create_prestamo(supabase, data)
+
+    if nuevo_prestamo:
+        prestamo_id = nuevo_prestamo.get('id')
+        item_nombre = f"{item_tipo.capitalize()} ID {item_id}"
+
+        if item_tipo == 'equipo':
+            item_nombre = f"Equipo ID {item_id}"
+        elif item_tipo == 'electronica':
+            item_nombre = f"Electrónica ID {item_id}"
+        elif item_tipo == 'robot':
+            item_nombre = f"Robot ID {item_id}"
+        elif item_tipo == 'material':
+            item_nombre = f"Material ID {item_id}"
+
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="salida",
+            item_type=item_tipo,
+            item_id=item_id,
+            usuario_id=current_user.id,
+            descripcion=f"Préstamo creado: {item_nombre}",
+            prestamo_id=prestamo_id
+        )
+
+        service.crear_notificacion(
+            supabase=supabase,
+            tipo="prestamo_creado",
+            titulo="Nuevo préstamo registrado",
+            mensaje=f"Se registró un nuevo préstamo para {item_nombre}",
+            url=f"/prestamos/{prestamo_id}"
+        )
+
+    return nuevo_prestamo
 
 
 @router.put("/prestamos/{prestamo_id}", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
@@ -671,6 +729,40 @@ def devolver_prestamo(
 
         if not updated:
             raise HTTPException(status_code=404, detail="No se pudo actualizar el préstamo")
+
+        item_tipo = None
+        item_id = None
+        if equipo_id:
+            item_tipo = 'equipo'
+            item_id = equipo_id
+        elif electronica_id:
+            item_tipo = 'electronica'
+            item_id = electronica_id
+        elif robot_id:
+            item_tipo = 'robot'
+            item_id = robot_id
+        elif material_id:
+            item_tipo = 'material'
+            item_id = material_id
+
+        if item_tipo and item_id:
+            service.registrar_movimiento(
+                supabase=supabase,
+                tipo="devolucion",
+                item_type=item_tipo,
+                item_id=item_id,
+                usuario_id=current_user.id,
+                descripcion=f"Préstamo devuelto: {item_tipo.capitalize()} ID {item_id}",
+                prestamo_id=prestamo_id
+            )
+
+            service.crear_notificacion(
+                supabase=supabase,
+                tipo="devolucion",
+                titulo="Devolución registrada",
+                mensaje=f"Se registró la devolución del {item_tipo} ID {item_id}",
+                url=f"/prestamos/{prestamo_id}"
+            )
 
         return updated
 

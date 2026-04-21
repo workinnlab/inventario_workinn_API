@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from supabase import Client
 from ....core.supabase_client import get_supabase
+from ....core.auth import require_inventory
+from ....schemas.auth import PerfilResponse
 from ....schemas.inventory import (
     EquipoCreate, EquipoResponse, EquipoUpdate,
     ElectronicaCreate, ElectronicaResponse, ElectronicaUpdate,
@@ -27,6 +29,7 @@ def listar_equipos(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     estado: Optional[str] = Query(None, description="Filtrar por estado: disponible, en uso, prestado, mantenimiento, dañado"),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
@@ -47,7 +50,11 @@ def listar_equipos(
 
 
 @router.get("/equipos/{equipo_id}", response_model=EquipoResponse, tags=["Inventario > Equipos"])
-def obtener_equipo(equipo_id: int, supabase: Client = Depends(get_supabase)):
+def obtener_equipo(
+    equipo_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Obtener equipo por ID"""
     equipo = service.get_equipo_by_id(supabase, equipo_id)
     if not equipo:
@@ -56,7 +63,11 @@ def obtener_equipo(equipo_id: int, supabase: Client = Depends(get_supabase)):
 
 
 @router.get("/equipos/codigo/{codigo}", response_model=EquipoResponse, tags=["Inventario > Equipos"])
-def obtener_equipo_por_codigo(codigo: str, supabase: Client = Depends(get_supabase)):
+def obtener_equipo_por_codigo(
+    codigo: str,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Obtener equipo por código (ej: PC-01)"""
     equipo = service.get_equipo_by_codigo(supabase, codigo)
     if not equipo:
@@ -65,7 +76,11 @@ def obtener_equipo_por_codigo(codigo: str, supabase: Client = Depends(get_supaba
 
 
 @router.post("/equipos", response_model=EquipoResponse, tags=["Inventario > Equipos"])
-def crear_equipo(equipo: EquipoCreate, supabase: Client = Depends(get_supabase)):
+def crear_equipo(
+    equipo: EquipoCreate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Crear un nuevo equipo
 
@@ -87,7 +102,7 @@ def crear_equipo(equipo: EquipoCreate, supabase: Client = Depends(get_supabase))
                 detail=f"El serial '{equipo.serial}' YA ESTÁ EN USO por otro equipo"
             )
 
-    return service.create_equipo(
+    nuevo_equipo = service.create_equipo(
         supabase,
         {
             "nombre": equipo.nombre,
@@ -99,9 +114,26 @@ def crear_equipo(equipo: EquipoCreate, supabase: Client = Depends(get_supabase))
         }
     )
 
+    if nuevo_equipo:
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="entrada",
+            item_type="equipo",
+            item_id=nuevo_equipo["id"],
+            usuario_id=current_user.id,
+            descripcion=f"Nuevo equipo '{equipo.nombre}' (código: {equipo.codigo}) agregado al inventario"
+        )
+
+    return nuevo_equipo
+
 
 @router.put("/equipos/{equipo_id}", response_model=EquipoResponse, tags=["Inventario > Equipos"])
-def actualizar_equipo(equipo_id: int, equipo: EquipoUpdate, supabase: Client = Depends(get_supabase)):
+def actualizar_equipo(
+    equipo_id: int,
+    equipo: EquipoUpdate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Actualizar equipo
 
@@ -138,11 +170,26 @@ def actualizar_equipo(equipo_id: int, equipo: EquipoUpdate, supabase: Client = D
         print(f"❌ [DEBUG] ERROR: Equipo {equipo_id} no encontrado")
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
 
+    if update_data:
+        cambios = ", ".join([f"{k}: {v}" for k, v in update_data.items()])
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="actualizacion",
+            item_type="equipo",
+            item_id=equipo_id,
+            usuario_id=current_user.id,
+            descripcion=f"Equipo actualizado. Cambios: {cambios}"
+        )
+
     return updated
 
 
 @router.delete("/equipos/{equipo_id}", tags=["Inventario > Equipos"])
-def eliminar_equipo(equipo_id: int, supabase: Client = Depends(get_supabase)):
+def eliminar_equipo(
+    equipo_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Eliminar equipo
 
@@ -158,8 +205,21 @@ def eliminar_equipo(equipo_id: int, supabase: Client = Depends(get_supabase)):
             detail=f"No se puede eliminar: el equipo tiene {len(prestamos_activos.data)} préstamo(s) activo(s)"
         )
 
+    equipo = service.get_equipo_by_id(supabase, equipo_id)
+    equipo_nombre = equipo.get("nombre", "Unknown") if equipo else "Unknown"
+
     if not service.delete_equipo(supabase, equipo_id):
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
+
+    service.registrar_movimiento(
+        supabase=supabase,
+        tipo="baja",
+        item_type="equipo",
+        item_id=equipo_id,
+        usuario_id=current_user.id,
+        descripcion=f"Equipo '{equipo_nombre}' dado de baja (eliminado del inventario)"
+    )
+
     return {"message": "Equipo eliminado correctamente"}
 
 
@@ -172,6 +232,7 @@ def listar_electronica(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     tipo: Optional[str] = Query(None, description="Filtrar por tipo"),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
@@ -190,7 +251,11 @@ def listar_electronica(
 
 
 @router.get("/electronica/{electronica_id}", response_model=ElectronicaResponse, tags=["Inventario > Electrónica"])
-def obtener_electronica(electronica_id: int, supabase: Client = Depends(get_supabase)):
+def obtener_electronica(
+    electronica_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Obtener electrónica por ID"""
     item = service.get_electronica_by_id(supabase, electronica_id)
     if not item:
@@ -199,7 +264,11 @@ def obtener_electronica(electronica_id: int, supabase: Client = Depends(get_supa
 
 
 @router.post("/electronica", response_model=ElectronicaResponse, tags=["Inventario > Electrónica"])
-def crear_electronica(electronica: ElectronicaCreate, supabase: Client = Depends(get_supabase)):
+def crear_electronica(
+    electronica: ElectronicaCreate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Crear nuevo elemento de electrónica
 
@@ -209,7 +278,6 @@ def crear_electronica(electronica: ElectronicaCreate, supabase: Client = Depends
     - EL-05: No permitir valores negativos
     - EL-04: en_uso + en_stock = total (automático por columna generada)
     """
-    # VALIDACIÓN EL-02, EL-03, EL-05: No permitir valores negativos
     if electronica.en_uso < 0:
         raise HTTPException(
             status_code=400,
@@ -221,7 +289,7 @@ def crear_electronica(electronica: ElectronicaCreate, supabase: Client = Depends
             detail="EL-03: en_stock no puede ser negativo"
         )
 
-    return service.create_electronica(
+    nuevo_item = service.create_electronica(
         supabase,
         {
             "nombre": electronica.nombre,
@@ -232,9 +300,26 @@ def crear_electronica(electronica: ElectronicaCreate, supabase: Client = Depends
         }
     )
 
+    if nuevo_item:
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="entrada",
+            item_type="electronica",
+            item_id=nuevo_item["id"],
+            usuario_id=current_user.id,
+            descripcion=f"Nueva electrónica '{electronica.nombre}' (tipo: {electronica.tipo}) agregada al inventario"
+        )
+
+    return nuevo_item
+
 
 @router.put("/electronica/{electronica_id}", response_model=ElectronicaResponse, tags=["Inventario > Electrónica"])
-def actualizar_electronica(electronica_id: int, electronica: ElectronicaUpdate, supabase: Client = Depends(get_supabase)):
+def actualizar_electronica(
+    electronica_id: int,
+    electronica: ElectronicaUpdate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Actualizar electrónica
 
@@ -243,7 +328,6 @@ def actualizar_electronica(electronica_id: int, electronica: ElectronicaUpdate, 
     """
     update_data = electronica.model_dump(exclude_unset=True)
 
-    # VALIDACIÓN: No permitir valores negativos
     for campo in ['en_uso', 'en_stock']:
         if campo in update_data and update_data[campo] < 0:
             raise HTTPException(
@@ -254,14 +338,43 @@ def actualizar_electronica(electronica_id: int, electronica: ElectronicaUpdate, 
     updated = service.update_electronica(supabase, electronica_id, update_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
+
+    if update_data:
+        cambios = ", ".join([f"{k}: {v}" for k, v in update_data.items()])
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="actualizacion",
+            item_type="electronica",
+            item_id=electronica_id,
+            usuario_id=current_user.id,
+            descripcion=f"Electrónica actualizada. Cambios: {cambios}"
+        )
+
     return updated
 
 
 @router.delete("/electronica/{electronica_id}", tags=["Inventario > Electrónica"])
-def eliminar_electronica(electronica_id: int, supabase: Client = Depends(get_supabase)):
+def eliminar_electronica(
+    electronica_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Eliminar electrónica"""
+    item = service.get_electronica_by_id(supabase, electronica_id)
+    item_nombre = item.get("nombre", "Unknown") if item else "Unknown"
+
     if not service.delete_electronica(supabase, electronica_id):
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
+
+    service.registrar_movimiento(
+        supabase=supabase,
+        tipo="baja",
+        item_type="electronica",
+        item_id=electronica_id,
+        usuario_id=current_user.id,
+        descripcion=f"Electrónica '{item_nombre}' dada de baja (eliminada del inventario)"
+    )
+
     return {"message": "Elemento eliminado correctamente"}
 
 
@@ -273,6 +386,7 @@ def eliminar_electronica(electronica_id: int, supabase: Client = Depends(get_sup
 def listar_robots(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener lista de robots"""
@@ -280,7 +394,11 @@ def listar_robots(
 
 
 @router.get("/robots/{robot_id}", response_model=RobotResponse, tags=["Inventario > Robots"])
-def obtener_robot(robot_id: int, supabase: Client = Depends(get_supabase)):
+def obtener_robot(
+    robot_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Obtener robot por ID"""
     item = service.get_robot_by_id(supabase, robot_id)
     if not item:
@@ -289,7 +407,11 @@ def obtener_robot(robot_id: int, supabase: Client = Depends(get_supabase)):
 
 
 @router.post("/robots", response_model=RobotResponse, tags=["Inventario > Robots"])
-def crear_robot(robot: RobotCreate, supabase: Client = Depends(get_supabase)):
+def crear_robot(
+    robot: RobotCreate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Crear nuevo robot
 
@@ -300,7 +422,6 @@ def crear_robot(robot: RobotCreate, supabase: Client = Depends(get_supabase)):
     - RO-06: No permitir valores negativos
     - RO-05: fuera_de_servicio + en_uso + disponible = total (automático)
     """
-    # VALIDACIÓN RO-02, RO-03, RO-04, RO-06: No permitir valores negativos
     if robot.fuera_de_servicio < 0:
         raise HTTPException(
             status_code=400,
@@ -320,7 +441,7 @@ def crear_robot(robot: RobotCreate, supabase: Client = Depends(get_supabase)):
     # VALIDACIÓN RO-05: Verificar coherencia (la suma debe ser consistente)
     total_esperado = robot.fuera_de_servicio + robot.en_uso + robot.disponible
 
-    return service.create_robot(
+    nuevo_robot = service.create_robot(
         supabase,
         {
             "nombre": robot.nombre,
@@ -330,9 +451,26 @@ def crear_robot(robot: RobotCreate, supabase: Client = Depends(get_supabase)):
         }
     )
 
+    if nuevo_robot:
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="entrada",
+            item_type="robot",
+            item_id=nuevo_robot["id"],
+            usuario_id=current_user.id,
+            descripcion=f"Nuevo robot '{robot.nombre}' agregado al inventario"
+        )
+
+    return nuevo_robot
+
 
 @router.put("/robots/{robot_id}", response_model=RobotResponse, tags=["Inventario > Robots"])
-def actualizar_robot(robot_id: int, robot: RobotUpdate, supabase: Client = Depends(get_supabase)):
+def actualizar_robot(
+    robot_id: int,
+    robot: RobotUpdate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Actualizar robot
 
@@ -341,7 +479,6 @@ def actualizar_robot(robot_id: int, robot: RobotUpdate, supabase: Client = Depen
     """
     update_data = robot.model_dump(exclude_unset=True)
 
-    # VALIDACIÓN: No permitir valores negativos
     for campo in ['fuera_de_servicio', 'en_uso', 'disponible']:
         if campo in update_data and update_data[campo] < 0:
             raise HTTPException(
@@ -352,14 +489,43 @@ def actualizar_robot(robot_id: int, robot: RobotUpdate, supabase: Client = Depen
     updated = service.update_robot(supabase, robot_id, update_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Robot no encontrado")
+
+    if update_data:
+        cambios = ", ".join([f"{k}: {v}" for k, v in update_data.items()])
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="actualizacion",
+            item_type="robot",
+            item_id=robot_id,
+            usuario_id=current_user.id,
+            descripcion=f"Robot actualizado. Cambios: {cambios}"
+        )
+
     return updated
 
 
 @router.delete("/robots/{robot_id}", tags=["Inventario > Robots"])
-def eliminar_robot(robot_id: int, supabase: Client = Depends(get_supabase)):
+def eliminar_robot(
+    robot_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Eliminar robot"""
+    item = service.get_robot_by_id(supabase, robot_id)
+    item_nombre = item.get("nombre", "Unknown") if item else "Unknown"
+
     if not service.delete_robot(supabase, robot_id):
         raise HTTPException(status_code=404, detail="Robot no encontrado")
+
+    service.registrar_movimiento(
+        supabase=supabase,
+        tipo="baja",
+        item_type="robot",
+        item_id=robot_id,
+        usuario_id=current_user.id,
+        descripcion=f"Robot '{item_nombre}' dado de baja (eliminado del inventario)"
+    )
+
     return {"message": "Robot eliminado correctamente"}
 
 
@@ -370,6 +536,7 @@ def eliminar_robot(robot_id: int, supabase: Client = Depends(get_supabase)):
 @router.get("/materiales/stock-minimo", response_model=List[MaterialResponse], tags=["Inventario > Materiales"])
 def get_materiales_stock_minimo(
     minimo: Optional[int] = Query(None, ge=1, description="Cantidad mínima de stock para alertar"),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
@@ -379,20 +546,17 @@ def get_materiales_stock_minimo(
 
     Útil para alertas de reorden/abastecimiento
     """
-    # Obtener configuración si no se proporciona minimo
     if minimo is None:
         config_response = supabase.table("configuracion_alertas").select("valor").eq("clave", "stock_minimo_default").execute()
         minimo = config_response.data[0]['valor'] if config_response.data else 5
 
     materiales = service.get_materiales(supabase, skip=0, limit=1000)
 
-    # Filtrar materiales con stock <= minimo
     materiales_stock_bajo = [
         m for m in materiales
         if m.get('en_stock', 0) <= minimo
     ]
 
-    # Ordenar por stock (menor a mayor)
     materiales_stock_bajo.sort(key=lambda x: x.get('en_stock', 0))
 
     return materiales_stock_bajo
@@ -402,6 +566,7 @@ def get_materiales_stock_minimo(
 def listar_materiales(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """Obtener lista de materiales"""
@@ -409,7 +574,11 @@ def listar_materiales(
 
 
 @router.get("/materiales/{material_id}", response_model=MaterialResponse, tags=["Inventario > Materiales"])
-def obtener_material(material_id: int, supabase: Client = Depends(get_supabase)):
+def obtener_material(
+    material_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Obtener material por ID"""
     item = service.get_material_by_id(supabase, material_id)
     if not item:
@@ -418,9 +587,13 @@ def obtener_material(material_id: int, supabase: Client = Depends(get_supabase))
 
 
 @router.post("/materiales", response_model=MaterialResponse, tags=["Inventario > Materiales"])
-def crear_material(material: MaterialCreate, supabase: Client = Depends(get_supabase)):
+def crear_material(
+    material: MaterialCreate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Crear nuevo material"""
-    return service.create_material(
+    nuevo_material = service.create_material(
         supabase,
         {
             "color": material.color,
@@ -433,16 +606,32 @@ def crear_material(material: MaterialCreate, supabase: Client = Depends(get_supa
         }
     )
 
+    if nuevo_material:
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="entrada",
+            item_type="material",
+            item_id=nuevo_material["id"],
+            usuario_id=current_user.id,
+            descripcion=f"Nuevo material '{material.color}' ({material.cantidad}) agregado al inventario"
+        )
+
+    return nuevo_material
+
 
 @router.put("/materiales/{material_id}", response_model=MaterialResponse, tags=["Inventario > Materiales"])
-def actualizar_material(material_id: int, material: MaterialUpdate, supabase: Client = Depends(get_supabase)):
+def actualizar_material(
+    material_id: int,
+    material: MaterialUpdate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Actualizar material
 
     VALIDACIONES:
     - NO permitir valores negativos (usado, en_uso, en_stock)
     """
-    # VALIDACIÓN: No permitir valores negativos
     update_data = material.model_dump(exclude_unset=True)
 
     for campo in ['usado', 'en_uso', 'en_stock']:
@@ -459,14 +648,43 @@ def actualizar_material(material_id: int, material: MaterialUpdate, supabase: Cl
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Material no encontrado")
+
+    if update_data:
+        cambios = ", ".join([f"{k}: {v}" for k, v in update_data.items()])
+        service.registrar_movimiento(
+            supabase=supabase,
+            tipo="actualizacion",
+            item_type="material",
+            item_id=material_id,
+            usuario_id=current_user.id,
+            descripcion=f"Material actualizado. Cambios: {cambios}"
+        )
+
     return updated
 
 
 @router.delete("/materiales/{material_id}", tags=["Inventario > Materiales"])
-def eliminar_material(material_id: int, supabase: Client = Depends(get_supabase)):
+def eliminar_material(
+    material_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """Eliminar material"""
+    item = service.get_material_by_id(supabase, material_id)
+    item_nombre = f"{item.get('color', 'Unknown')} ({item.get('cantidad', 'Unknown')})" if item else "Unknown"
+
     if not service.delete_material(supabase, material_id):
         raise HTTPException(status_code=404, detail="Material no encontrado")
+
+    service.registrar_movimiento(
+        supabase=supabase,
+        tipo="baja",
+        item_type="material",
+        item_id=material_id,
+        usuario_id=current_user.id,
+        descripcion=f"Material '{item_nombre}' dado de baja (eliminado del inventario)"
+    )
+
     return {"message": "Material eliminado correctamente"}
 
 
