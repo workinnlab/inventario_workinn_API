@@ -281,7 +281,7 @@ class MovimientoCreate(MovimientoBase):
 class MovimientoResponse(MovimientoBase):
     """Schema para respuesta de Movimiento"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: int
     equipo_id: Optional[int]
     electronica_id: Optional[int]
@@ -289,6 +289,7 @@ class MovimientoResponse(MovimientoBase):
     material_id: Optional[int]
     prestamo_id: Optional[int]
     usuario_id: Optional[str]
+    usuario_nombre: Optional[str] = None
     created_at: datetime
 
 

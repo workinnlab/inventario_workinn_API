@@ -259,7 +259,15 @@ def get_movimientos(supabase: Client, skip: int = 0, limit: int = 100, tipo: str
     if tipo:
         query = query.eq("tipo", tipo)
     response = query.range(skip, skip + limit - 1).execute()
-    return response.data
+
+    movimientos = response.data
+    for mov in movimientos:
+        if mov.get('usuario_id'):
+            perfil = supabase.table("perfiles").select("nombre").eq("id", mov['usuario_id']).execute()
+            if perfil.data:
+                mov['usuario_nombre'] = perfil.data[0].get('nombre')
+
+    return movimientos
 
 
 def get_movimiento_by_id(supabase: Client, movimiento_id: int) -> Optional[Dict]:
