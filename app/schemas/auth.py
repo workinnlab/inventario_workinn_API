@@ -22,6 +22,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, description="Mínimo 6 caracteres")
     nombre: str = Field(..., min_length=2)
     rol: Optional[str] = Field(None, pattern="^(admin|inventory|viewer)$")
+    rol_id: Optional[int] = Field(None, description="ID del rol en tabla roles")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -39,8 +40,9 @@ class UserResponse(BaseModel):
     email: str
     nombre: str
     rol: str
+    rol_id: Optional[int] = None
     activo: bool
-    
+
     class Config:
         from_attributes = True
 
@@ -59,9 +61,16 @@ class PerfilResponse(BaseModel):
     nombre: str
     email: str
     rol: str
+    rol_id: Optional[int] = None
     activo: bool
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
+
+
+class RolResponse(BaseModel):
+    """Rol de usuario"""
+    id: int
+    nombre: str

@@ -65,7 +65,7 @@ async def get_current_user(
 def require_role(allowed_roles: List[str]):
     """
     Decorador para requerir roles específicos
-    
+
     Uso:
         @router.get("/admin", dependencies=[Depends(require_role(["admin"]))])
         def endpoint_admin():
@@ -74,13 +74,20 @@ def require_role(allowed_roles: List[str]):
     async def role_checker(
         current_user: PerfilResponse = Depends(get_current_user)
     ):
-        if current_user.rol not in allowed_roles:
+        if current_user.rol_id:
+            rol_map = {1: "admin", 2: "inventory", 3: "viewer"}
+            if rol_map.get(current_user.rol_id) not in allowed_roles:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Se requiere uno de los siguientes roles: {', '.join(allowed_roles)}"
+                )
+        elif current_user.rol.lower() not in [r.lower() for r in allowed_roles]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Se requiere uno de los siguientes roles: {', '.join(allowed_roles)}"
             )
         return current_user
-    
+
     return role_checker
 
 
