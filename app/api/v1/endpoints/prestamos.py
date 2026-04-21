@@ -6,6 +6,8 @@ from typing import List, Optional
 from datetime import datetime
 from supabase import Client
 from ....core.supabase_client import get_supabase
+from ....core.auth import require_inventory
+from ....schemas.auth import PerfilResponse
 from ....schemas.inventory import (
     PrestatarioCreate, PrestatarioResponse, PrestatarioUpdate,
     PrestamoCreate, PrestamoResponse, PrestamoUpdate
@@ -25,15 +27,20 @@ def listar_prestatarios(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     activo: Optional[bool] = Query(True),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
-    """Obtener lista de prestatarios"""
+    """Obtener lista de prestatarios - Solo inventory y admin"""
     return service.get_prestatarios(supabase, skip=skip, limit=limit, activo=activo)
 
 
 @router.get("/prestatarios/{prestatario_id}", response_model=PrestatarioResponse, tags=["Préstamos > Prestatarios"])
-def obtener_prestatario(prestatario_id: int, supabase: Client = Depends(get_supabase)):
-    """Obtener prestatario por ID"""
+def obtener_prestatario(
+    prestatario_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
+    """Obtener prestatario por ID - Solo inventory y admin"""
     prestatario = service.get_prestatario_by_id(supabase, prestatario_id)
     if not prestatario:
         raise HTTPException(status_code=404, detail="Prestatario no encontrado")
@@ -41,9 +48,13 @@ def obtener_prestatario(prestatario_id: int, supabase: Client = Depends(get_supa
 
 
 @router.post("/prestatarios", response_model=PrestatarioResponse, tags=["Préstamos > Prestatarios"])
-def crear_prestatario(prestatario: PrestatarioCreate, supabase: Client = Depends(get_supabase)):
+def crear_prestatario(
+    prestatario: PrestatarioCreate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
-    Crear nuevo prestatario
+    Crear nuevo prestatario - Solo inventory y admin
 
     VALIDACIONES:
     - Email válido (si se proporciona)
@@ -93,9 +104,14 @@ def crear_prestatario(prestatario: PrestatarioCreate, supabase: Client = Depends
 
 
 @router.put("/prestatarios/{prestatario_id}", response_model=PrestatarioResponse, tags=["Préstamos > Prestatarios"])
-def actualizar_prestatario(prestatario_id: int, prestatario: PrestatarioUpdate, supabase: Client = Depends(get_supabase)):
+def actualizar_prestatario(
+    prestatario_id: int,
+    prestatario: PrestatarioUpdate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
-    Actualizar prestatario
+    Actualizar prestatario - Solo inventory y admin
 
     VALIDACIONES:
     - Email válido (si se proporciona y se está actualizando)
@@ -119,9 +135,13 @@ def actualizar_prestatario(prestatario_id: int, prestatario: PrestatarioUpdate, 
 
 
 @router.delete("/prestatarios/{prestatario_id}", tags=["Préstamos > Prestatarios"])
-def eliminar_prestatario(prestatario_id: int, supabase: Client = Depends(get_supabase)):
+def eliminar_prestatario(
+    prestatario_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
-    Eliminar prestatario (lógico: marca como inactivo)
+    Eliminar prestatario (lógico: marca como inactivo) - Solo inventory y admin
 
     VALIDACIONES:
     - NO eliminar/inactivar si tiene préstamos activos
@@ -150,16 +170,20 @@ def listar_prestamos(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     estado: Optional[str] = Query(None),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
-    """Obtener lista de préstamos"""
+    """Obtener lista de préstamos - Solo inventory y admin"""
     return service.get_prestamos(supabase, skip=skip, limit=limit, estado=estado)
 
 
 @router.get("/prestamos/activos", response_model=List[PrestamoResponse], tags=["Préstamos > Gestión"])
-def listar_prestamos_activos(supabase: Client = Depends(get_supabase)):
+def listar_prestamos_activos(
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
-    Obtener préstamos activos
+    Obtener préstamos activos - Solo inventory y admin
 
     NOTA: También incluye lógica para marcar automáticamente como 'vencidos'
     los préstamos que pasaron su fecha_limite
@@ -191,10 +215,11 @@ def listar_prestamos_activos(supabase: Client = Depends(get_supabase)):
 @router.get("/prestamos/por-vencer", response_model=List[PrestamoResponse], tags=["Préstamos > Gestión"])
 def listar_prestamos_por_vencer(
     dias: Optional[int] = Query(None, ge=1, description="Días para considerar como 'por vencer'"),
+    current_user: PerfilResponse = Depends(require_inventory),
     supabase: Client = Depends(get_supabase)
 ):
     """
-    RN-03: Obtener préstamos que están por vencer en los próximos X días
+    RN-03: Obtener préstamos que están por vencer en los próximos X días - Solo inventory y admin
 
     Si no se proporciona 'dias', usa la configuración global (default: 7)
     """
@@ -227,8 +252,12 @@ def listar_prestamos_por_vencer(
 
 
 @router.get("/prestamos/{prestamo_id}", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
-def obtener_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
-    """Obtener préstamo por ID"""
+def obtener_prestamo(
+    prestamo_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
+    """Obtener préstamo por ID - Solo inventory y admin"""
     prestamo = service.get_prestamo_by_id(supabase, prestamo_id)
     if not prestamo:
         raise HTTPException(status_code=404, detail="Préstamo no encontrado")
@@ -236,9 +265,13 @@ def obtener_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase))
 
 
 @router.post("/prestamos", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
-def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supabase)):
+def crear_prestamo(
+    prestamo: PrestamoCreate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
-    Crear nuevo préstamo
+    Crear nuevo préstamo - Solo inventory y admin
 
     VALIDACIONES:
     1. Verifica que el elemento NO esté ya prestado
@@ -492,9 +525,14 @@ def crear_prestamo(prestamo: PrestamoCreate, supabase: Client = Depends(get_supa
 
 
 @router.put("/prestamos/{prestamo_id}", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
-def actualizar_prestamo(prestamo_id: int, prestamo: PrestamoUpdate, supabase: Client = Depends(get_supabase)):
+def actualizar_prestamo(
+    prestamo_id: int,
+    prestamo: PrestamoUpdate,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
-    Actualizar préstamo
+    Actualizar préstamo - Solo inventory y admin
 
     VALIDACIONES:
     - PS-09: fecha_devolucion >= fecha_prestamo (si se proporciona)
@@ -534,7 +572,11 @@ def actualizar_prestamo(prestamo_id: int, prestamo: PrestamoUpdate, supabase: Cl
 
 
 @router.post("/prestamos/{prestamo_id}/devolver", response_model=PrestamoResponse, tags=["Préstamos > Gestión"])
-def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
+def devolver_prestamo(
+    prestamo_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
     Marcar préstamo como devuelto
 
@@ -642,9 +684,13 @@ def devolver_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)
 
 
 @router.delete("/prestamos/{prestamo_id}", tags=["Préstamos > Gestión"])
-def eliminar_prestamo(prestamo_id: int, supabase: Client = Depends(get_supabase)):
+def eliminar_prestamo(
+    prestamo_id: int,
+    current_user: PerfilResponse = Depends(require_inventory),
+    supabase: Client = Depends(get_supabase)
+):
     """
-    Eliminar préstamo
+    Eliminar préstamo - Solo inventory y admin
 
     VALIDACIÓN:
     - NO permitir eliminar si está activo (debe estar devuelto primero)
